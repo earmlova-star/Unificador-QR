@@ -1,0 +1,27 @@
+# Vite
+node_modules/
+dist/
+*.local
+
+# Environment
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Salida de scripts/procesarReportesExistentes.ts
+reportes_regenerados/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
