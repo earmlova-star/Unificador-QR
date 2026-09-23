@@ -341,6 +341,38 @@ export interface EntregaTurno {
   usuario_hecha?: Usuario;
 }
 
+// Módulo "Organizador de Turnos" (ver add_organizador_turnos.sql).
+// Independiente de faena/contrato (pedido explícito) — a diferencia de
+// EntregaTurno y ParteDiario, acá una cuadrilla no pertenece a LT/LB.
+export interface TrabajadorCuadrilla {
+  id: string;
+  cuadrilla_id: string;
+  nombre: string;
+  apellido: string;
+  rut: string;
+  cargo: string;
+  created_at: string;
+}
+
+export interface CuadrillaTurno {
+  id: string;
+  nombre: string;
+
+  patron_dias_trabajo: number;
+  patron_dias_descanso: number;
+  patron_incluye_subida: boolean;
+
+  fecha_inicio: string;
+  color_tema: string;
+  orden: number;
+
+  creado_por: string;
+  created_at: string;
+  updated_at: string;
+
+  trabajadores: TrabajadorCuadrilla[];
+}
+
 // Listas fijas de cargos/equipos del contrato 12501191 (ver MAPEO_CAMPOS.md).
 // Si el día de mañana hay más de un contrato con Daily Report y su propia
 // lista de cargos, esto pasa a vivir en la tabla `contratos` (columna

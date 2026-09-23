@@ -13,6 +13,7 @@ import {
   IconEntregaTurno,
   IconInicio,
   IconOjo,
+  IconOrganizadorTurnos,
   IconReloj,
   IconReporte,
   IconUsuario,
@@ -28,6 +29,7 @@ type Vista =
   | 'compras'
   | 'bodega'
   | 'entrega-turno'
+  | 'organizador-turnos'
 
 interface LayoutProps {
   usuario: Usuario | null
@@ -240,6 +242,20 @@ export const Layout = ({
               label="Entrega de Turno"
               active={activeView === 'entrega-turno'}
               onClick={() => irA('entrega-turno')}
+              expanded={navExpanded || menuMovilAbierto}
+            />
+          )}
+
+          {/* Organizador de Turnos: carta Gantt de cuadrillas (14x14, 7x7,
+              4x3), compartida vía Supabase (ver add_organizador_turnos.sql).
+              Acceso restringido a coordinador, reforzado en RLS.
+              Independiente de faena/contrato — pedido explícito. */}
+          {usuario?.rol === UserRole.COORDINADOR && (
+            <NavItem
+              icon={<IconOrganizadorTurnos />}
+              label="Organizador de Turnos"
+              active={activeView === 'organizador-turnos'}
+              onClick={() => irA('organizador-turnos')}
               expanded={navExpanded || menuMovilAbierto}
             />
           )}

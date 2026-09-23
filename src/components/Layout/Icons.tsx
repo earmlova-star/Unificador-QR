@@ -140,6 +140,16 @@ export const IconAlerta = () => (
   </svg>
 )
 
+export const IconOrganizadorTurnos = () => (
+  <svg {...base}>
+    <line x1="3" y1="6" x2="14" y2="6" />
+    <line x1="3" y1="12" x2="19" y2="12" />
+    <line x1="3" y1="18" x2="10" y2="18" />
+    <circle cx="17" cy="6" r="2.3" />
+    <circle cx="13" cy="18" r="2.3" />
+  </svg>
+)
+
 export const IconProveedor = () => (
   <svg {...base}>
     <rect x="4" y="9" width="10" height="12" />

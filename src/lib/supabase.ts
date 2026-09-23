@@ -838,4 +838,107 @@ export const db = {
     const { error } = await supabase.from('entregas_turno').delete().eq('id', id)
     if (error) throw error
   },
+
+  // ---------- Organizador de Turnos ----------
+  // Ver add_organizador_turnos.sql. Acceso restringido a coordinador a
+  // nivel de RLS, mismo patrón que Entrega de Turno. Independiente de
+  // faena/contrato — pedido explícito.
+  async obtenerCuadrillasTurno() {
+    const { data, error } = await supabase
+      .from('cuadrillas_turno')
+      .select('*, trabajadores:cuadrillas_turno_trabajadores(*)')
+      .order('orden', { ascending: true })
+
+    if (error) throw error
+    return data
+  },
+
+  async crearCuadrillaTurno(cuadrilla: {
+    nombre: string
+    patron_dias_trabajo: number
+    patron_dias_descanso: number
+    patron_incluye_subida: boolean
+    fecha_inicio: string
+    color_tema: string
+    orden: number
+    creado_por: string
+  }) {
+    const { data, error } = await supabase.from('cuadrillas_turno').insert([cuadrilla]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  async actualizarCuadrillaTurno(
+    id: string,
+    cambios: Partial<{
+      nombre: string
+      patron_dias_trabajo: number
+      patron_dias_descanso: number
+      patron_incluye_subida: boolean
+      fecha_inicio: string
+      color_tema: string
+    }>
+  ) {
+    const { data, error } = await supabase
+      .from('cuadrillas_turno')
+      .update({ ...cambios, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  async eliminarCuadrillaTurno(id: string) {
+    // La FK de cuadrillas_turno_trabajadores tiene "on delete cascade":
+    // borrar la cuadrilla borra a sus trabajadores automáticamente.
+    const { error } = await supabase.from('cuadrillas_turno').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  // Reescribe el orden completo (0..n-1) tras un arrastre — más simple que
+  // mantener huecos fraccionarios, y el volumen de filas (cuadrillas) es
+  // siempre chico.
+  async reordenarCuadrillasTurno(ordenados: { id: string; orden: number }[]) {
+    const { error } = await supabase.from('cuadrillas_turno').upsert(
+      ordenados.map(({ id, orden }) => ({ id, orden, updated_at: new Date().toISOString() })),
+      { onConflict: 'id' }
+    )
+    if (error) throw error
+  },
+
+  async agregarTrabajadorCuadrilla(trabajador: {
+    cuadrilla_id: string
+    nombre: string
+    apellido: string
+    rut: string
+    cargo: string
+  }) {
+    const { data, error } = await supabase
+      .from('cuadrillas_turno_trabajadores')
+      .insert([trabajador])
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  async actualizarTrabajadorCuadrilla(id: string, cambios: Partial<{ nombre: string; apellido: string; rut: string; cargo: string }>) {
+    const { data, error } = await supabase
+      .from('cuadrillas_turno_trabajadores')
+      .update(cambios)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  async eliminarTrabajadorCuadrilla(id: string) {
+    const { error } = await supabase.from('cuadrillas_turno_trabajadores').delete().eq('id', id)
+    if (error) throw error
+  },
 }

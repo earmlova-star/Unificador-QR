@@ -28,6 +28,9 @@ const Bodega = lazy(() => import('@components/Bodega/Bodega').then((m) => ({ def
 const EntregaTurno = lazy(() =>
   import('@components/EntregaTurno/EntregaTurno').then((m) => ({ default: m.EntregaTurno }))
 )
+const OrganizadorTurnos = lazy(() =>
+  import('@components/OrganizadorTurnos/OrganizadorTurnos').then((m) => ({ default: m.OrganizadorTurnos }))
+)
 
 const CLAVE_FAENA_ACTIVA = 'unificador-qr:faena-activa'
 
@@ -66,6 +69,7 @@ type Vista =
   | 'compras'
   | 'bodega'
   | 'entrega-turno'
+  | 'organizador-turnos'
 
 export function App() {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
@@ -179,6 +183,10 @@ export function App() {
 
         {activeView === 'entrega-turno' && usuario.rol === UserRole.COORDINADOR && (
           <EntregaTurno usuario={usuario} contrato={contratoActivo} faenaActiva={faenaActiva} />
+        )}
+
+        {activeView === 'organizador-turnos' && usuario.rol === UserRole.COORDINADOR && (
+          <OrganizadorTurnos usuario={usuario} />
         )}
       </Suspense>
 
