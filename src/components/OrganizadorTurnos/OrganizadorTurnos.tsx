@@ -49,6 +49,24 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
     cargar()
   }, [])
 
+  // Sin realtime: si un coordinador crea/edita un turno mientras este tab
+  // ya estaba abierto en la pestaña de otra persona, esa pestaña no se
+  // entera sola. Recargar al volver a la pestaña cubre el caso más común
+  // (alt-tab / cambiar de módulo y volver) sin tener que armar una
+  // suscripción realtime para un módulo de bajo volumen de escritura.
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') cargar()
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    window.addEventListener('focus', alVolver)
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver)
+      window.removeEventListener('focus', alVolver)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const inicioVentanaFecha = useMemo(() => new Date(`${inicioVentana}T00:00:00`), [inicioVentana])
   const columnasFecha = useMemo(
     () =>
@@ -155,6 +173,15 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
             title="Al mover la fecha de un turno con ← →, mover también todos los demás"
           >
             {bloqueoGlobal ? '🔒 Sincronizado' : '🔓 Individual'}
+          </button>
+          <button
+            type="button"
+            onClick={cargar}
+            disabled={cargando}
+            title="Volver a cargar los turnos desde el servidor — no hay sincronización en tiempo real, así que los cambios de otro coordinador no aparecen solos"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors disabled:opacity-40"
+          >
+            {cargando ? '⏳ Actualizando…' : '↻ Actualizar'}
           </button>
         </div>
       </div>
