@@ -5,6 +5,7 @@ import { CuadrillaTurno, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
 import { PRESETS_TURNO, PatronTurno } from './lib/presetsTurno'
 import { CALENDARIO_INICIO, TAMANO_VENTANA, enInicioDeRango, enFinDeRango, limitarInicioVentana, sumarDias } from './lib/rangoFechas'
+import { esFeriado, nombreFeriado } from './lib/feriados'
 import { ModalAgregarTurno } from './ModalAgregarTurno'
 import { ModalEditarTurno } from './ModalEditarTurno'
 import { ModalAgregarFuncionario } from './ModalAgregarFuncionario'
@@ -306,13 +307,19 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   const mes = fecha.toLocaleDateString('es-CL', { month: 'short' })
                   const diaSemana = fecha.toLocaleDateString('es-CL', { weekday: 'short' }).replace('.', '')
                   const esFinDeSemana = fecha.getDay() === 0 || fecha.getDay() === 6
+                  const feriado = esFeriado(fecha)
                   return (
                     <div
                       key={idx}
                       onMouseEnter={() => setColumnaHover(idx)}
                       onMouseLeave={() => setColumnaHover((c) => (c === idx ? null : c))}
+                      title={feriado ? `Feriado: ${nombreFeriado(fecha)}` : undefined}
                       className={`relative w-12 flex-shrink-0 text-center py-2 border-r border-slate-100 text-xs ${
-                        esFinDeSemana ? 'bg-amber-50 font-bold text-amber-700' : 'text-slate-600'
+                        feriado
+                          ? 'bg-yellow-100 font-bold text-yellow-800'
+                          : esFinDeSemana
+                          ? 'bg-amber-50 font-bold text-amber-700'
+                          : 'text-slate-600'
                       }`}
                     >
                       <div className="text-[10px] text-slate-400 uppercase">{mes}</div>
@@ -450,6 +457,9 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         )}
                         {seg.tipo === 'TURNO' && seg.etiqueta.replace('Día ', 'D')}
                         {seg.tipo === 'DESCANSO' && '-'}
+                        {columnasFecha[idx] && esFeriado(columnasFecha[idx]) && (
+                          <div className="absolute inset-0 bg-yellow-200/50 pointer-events-none" />
+                        )}
                         {columnaHover === idx && <div className="absolute inset-0 bg-emerald-300/40 pointer-events-none" />}
                       </div>
                     ))}
