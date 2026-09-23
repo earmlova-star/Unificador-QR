@@ -31,6 +31,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
 
   const [arrastrandoId, setArrastrandoId] = useState<string | null>(null)
   const [sobreId, setSobreId] = useState<string | null>(null)
+  const [columnaHover, setColumnaHover] = useState<number | null>(null)
 
   const cargar = async () => {
     setCargando(true)
@@ -236,13 +237,16 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   return (
                     <div
                       key={idx}
-                      className={`w-12 flex-shrink-0 text-center py-2 border-r border-slate-100 text-xs ${
+                      onMouseEnter={() => setColumnaHover(idx)}
+                      onMouseLeave={() => setColumnaHover((c) => (c === idx ? null : c))}
+                      className={`relative w-12 flex-shrink-0 text-center py-2 border-r border-slate-100 text-xs ${
                         esFinDeSemana ? 'bg-amber-50 font-bold text-amber-700' : 'text-slate-600'
                       }`}
                     >
                       <div className="text-[10px] text-slate-400 uppercase">{mes}</div>
                       <div>{fecha.getDate()}</div>
                       <div className="text-[9px] uppercase opacity-70">{diaSemana}</div>
+                      {columnaHover === idx && <div className="absolute inset-0 bg-emerald-300/40 pointer-events-none" />}
                     </div>
                   )
                 })}
@@ -326,10 +330,12 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   </div>
 
                   <div className="flex items-center">
-                    {segmentos.map((seg) => (
+                    {segmentos.map((seg, idx) => (
                       <div
                         key={seg.id}
-                        className={`w-12 h-10 border-r border-slate-100 flex items-center justify-center text-[10px] font-bold select-none ${
+                        onMouseEnter={() => setColumnaHover(idx)}
+                        onMouseLeave={() => setColumnaHover((c) => (c === idx ? null : c))}
+                        className={`relative w-12 h-10 border-r border-slate-100 flex items-center justify-center text-[10px] font-bold select-none ${
                           seg.tipo === 'SIN_INICIO' ? 'bg-white' : seg.colorClass
                         }`}
                         title={
@@ -349,6 +355,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         )}
                         {seg.tipo === 'TURNO' && seg.etiqueta.replace('Día ', 'D')}
                         {seg.tipo === 'DESCANSO' && '-'}
+                        {columnaHover === idx && <div className="absolute inset-0 bg-emerald-300/40 pointer-events-none" />}
                       </div>
                     ))}
                   </div>
