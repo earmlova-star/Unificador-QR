@@ -122,7 +122,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
 
     setError(null)
     try {
-      await db.reordenarCuadrillasTurno(reordenadas.map((c, idx) => ({ id: c.id, orden: idx })))
+      await db.reordenarCuadrillasTurno(reordenadas.map((c) => c.id))
     } catch (err) {
       setError(traducirError(err, 'No se pudo reordenar los turnos'))
       cargar()

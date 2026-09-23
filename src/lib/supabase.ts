@@ -897,14 +897,14 @@ export const db = {
     if (error) throw error
   },
 
-  // Reescribe el orden completo (0..n-1) tras un arrastre — más simple que
-  // mantener huecos fraccionarios, y el volumen de filas (cuadrillas) es
-  // siempre chico.
-  async reordenarCuadrillasTurno(ordenados: { id: string; orden: number }[]) {
-    const { error } = await supabase.from('cuadrillas_turno').upsert(
-      ordenados.map(({ id, orden }) => ({ id, orden, updated_at: new Date().toISOString() })),
-      { onConflict: 'id' }
-    )
+  // Reescribe el orden completo (0..n-1) tras un arrastre, en una sola
+  // transacción (ver add_reordenar_cuadrillas_turno_rpc.sql — mismo patrón
+  // que reordenar_documentos). No usar .upsert() con columnas parciales acá:
+  // un INSERT ... ON CONFLICT DO UPDATE exige que la fila candidata del
+  // INSERT cumpla los NOT NULL de la tabla completa antes de resolver el
+  // conflicto, así que un payload con solo {id, orden} falla siempre.
+  async reordenarCuadrillasTurno(idsEnOrden: string[]) {
+    const { error } = await supabase.rpc('reordenar_cuadrillas_turno', { p_ids: idsEnOrden })
     if (error) throw error
   },
 
