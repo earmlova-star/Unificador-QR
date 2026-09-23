@@ -33,6 +33,9 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [sobreId, setSobreId] = useState<string | null>(null)
   const [columnaHover, setColumnaHover] = useState<number | null>(null)
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
+  const [ocultas, setOcultas] = useState<Set<string>>(new Set())
+  const [mostrarOcultos, setMostrarOcultos] = useState(false)
+  const [menuContextual, setMenuContextual] = useState<{ cuadrillaId: string; x: number; y: number } | null>(null)
 
   const alternarExpandida = (id: string) => {
     setExpandidas((prev) => {
@@ -42,6 +45,34 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       return siguiente
     })
   }
+
+  // "Ocultar" es solo visual (estado local, no se guarda en la base): saca
+  // el turno de la carta Gantt sin tocar sus datos ni los de nadie más, y
+  // el botón "Mostrar ocultos" del encabezado lo trae de vuelta. Distinto
+  // de "Eliminar", que sí borra el turno y sus trabajadores para siempre.
+  const alternarOculta = (id: string) => {
+    setOcultas((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(id)) siguiente.delete(id)
+      else siguiente.add(id)
+      return siguiente
+    })
+    setMenuContextual(null)
+  }
+
+  useEffect(() => {
+    if (!menuContextual) return
+    const cerrar = () => setMenuContextual(null)
+    const alPresionarTecla = (e: KeyboardEvent) => { if (e.key === 'Escape') cerrar() }
+    window.addEventListener('click', cerrar)
+    window.addEventListener('scroll', cerrar, true)
+    window.addEventListener('keydown', alPresionarTecla)
+    return () => {
+      window.removeEventListener('click', cerrar)
+      window.removeEventListener('scroll', cerrar, true)
+      window.removeEventListener('keydown', alPresionarTecla)
+    }
+  }, [menuContextual])
 
   const cargar = async () => {
     setCargando(true)
@@ -115,6 +146,12 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
     try {
       await db.eliminarCuadrillaTurno(cuadrilla.id)
       setCuadrillas((prev) => prev.filter((c) => c.id !== cuadrilla.id))
+      setOcultas((prev) => {
+        if (!prev.has(cuadrilla.id)) return prev
+        const siguiente = new Set(prev)
+        siguiente.delete(cuadrilla.id)
+        return siguiente
+      })
     } catch (err) {
       setError(traducirError(err, 'No se pudo eliminar el turno'))
     }
@@ -139,6 +176,8 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       cargar()
     }
   }
+
+  const cuadrillasVisibles = mostrarOcultos ? cuadrillas : cuadrillas.filter((c) => !ocultas.has(c.id))
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -232,12 +271,35 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           <p className="text-sm text-slate-500">Aún no hay turnos creados.</p>
           <p className="text-xs text-slate-400 mt-1">Usa los botones de preconfiguración o "Agregar Turno" para comenzar.</p>
         </div>
+      ) : cuadrillasVisibles.length === 0 ? (
+        <div className="py-12 text-center">
+          <p className="text-sm text-slate-500">Todos los turnos están ocultos.</p>
+          <button
+            type="button"
+            onClick={() => setMostrarOcultos(true)}
+            className="text-xs text-blue-600 hover:underline mt-1"
+          >
+            👁 Mostrar ocultos ({ocultas.size})
+          </button>
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full">
             <div className="flex border-b border-slate-200 sticky top-0 bg-white z-10">
-              <div className="w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 font-semibold text-xs text-slate-500 uppercase tracking-wider border-r border-slate-200 sticky left-0 bg-white z-20">
+              <div className="relative w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 font-semibold text-xs text-slate-500 uppercase tracking-wider border-r border-slate-200 sticky left-0 bg-white z-20">
                 Cuadrilla / Dotación
+                {ocultas.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarOcultos((v) => !v)}
+                    title={mostrarOcultos ? 'Ocultar de nuevo los turnos ocultos' : 'Mostrar los turnos ocultos'}
+                    className={`absolute bottom-1 right-2 px-1.5 py-0.5 rounded text-[10px] font-semibold normal-case tracking-normal transition-colors ${
+                      mostrarOcultos ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    👁 {mostrarOcultos ? 'Viendo ocultos' : `Ocultos (${ocultas.size})`}
+                  </button>
+                )}
               </div>
               <div className="flex">
                 {columnasFecha.map((fecha, idx) => {
@@ -263,21 +325,26 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               </div>
             </div>
 
-            {cuadrillas.map((cuadrilla) => {
+            {cuadrillasVisibles.map((cuadrilla) => {
               const segmentos = generarLineaTiempoCuadrilla(cuadrilla, inicioVentanaFecha, TAMANO_VENTANA)
               const estaArrastrando = arrastrandoId === cuadrilla.id
               const estaSobre = sobreId === cuadrilla.id && arrastrandoId !== cuadrilla.id
               const estaExpandida = expandidas.has(cuadrilla.id)
+              const estaOculta = ocultas.has(cuadrilla.id)
 
               return (
               <Fragment key={cuadrilla.id}>
                 <div
                   className={`flex border-b border-slate-100 hover:bg-slate-50 transition-colors ${
                     estaArrastrando ? 'opacity-40' : ''
-                  } ${estaSobre ? 'border-t-2 border-t-blue-500' : ''}`}
+                  } ${estaSobre ? 'border-t-2 border-t-blue-500' : ''} ${estaOculta ? 'opacity-50' : ''}`}
                   onDragOver={(e) => { e.preventDefault(); setSobreId(cuadrilla.id) }}
                   onDragLeave={() => setSobreId((c) => (c === cuadrilla.id ? null : c))}
                   onDrop={(e) => { e.preventDefault(); soltarCuadrilla(cuadrilla); setArrastrandoId(null); setSobreId(null) }}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setMenuContextual({ cuadrillaId: cuadrilla.id, x: e.clientX, y: e.clientY })
+                  }}
                 >
                   <div className="w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 border-r border-slate-200 sticky left-0 bg-white z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-0">
                     <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -299,7 +366,10 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         {estaExpandida ? '▾' : '▸'}
                       </button>
                       <div className="min-w-0">
-                        <h3 className="font-semibold text-sm text-slate-800 truncate">{cuadrilla.nombre}</h3>
+                        <h3 className="font-semibold text-sm text-slate-800 truncate">
+                          {cuadrilla.nombre}
+                          {estaOculta && <span className="ml-1.5 text-[10px] font-normal text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">oculto</span>}
+                        </h3>
                         <button
                           type="button"
                           onClick={() => alternarExpandida(cuadrilla.id)}
@@ -464,6 +534,22 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
             setCuadrillaEditando(null)
           }}
         />
+      )}
+
+      {menuContextual && (
+        <div
+          className="fixed bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1 min-w-[180px]"
+          style={{ top: menuContextual.y, left: menuContextual.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => alternarOculta(menuContextual.cuadrillaId)}
+            className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            {ocultas.has(menuContextual.cuadrillaId) ? '👁 Mostrar turno' : '🙈 Ocultar turno'}
+          </button>
+        </div>
       )}
     </div>
   )
