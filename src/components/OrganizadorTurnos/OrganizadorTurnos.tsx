@@ -225,7 +225,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full">
             <div className="flex border-b border-slate-200 sticky top-0 bg-white z-10">
-              <div className="w-44 sm:w-72 flex-shrink-0 px-3 sm:px-4 py-2 font-semibold text-xs text-slate-500 uppercase tracking-wider border-r border-slate-200 sticky left-0 bg-white z-20">
+              <div className="w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 font-semibold text-xs text-slate-500 uppercase tracking-wider border-r border-slate-200 sticky left-0 bg-white z-20">
                 Cuadrilla / Dotación
               </div>
               <div className="flex">
@@ -264,7 +264,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   onDragLeave={() => setSobreId((c) => (c === cuadrilla.id ? null : c))}
                   onDrop={(e) => { e.preventDefault(); soltarCuadrilla(cuadrilla); setArrastrandoId(null); setSobreId(null) }}
                 >
-                  <div className="w-44 sm:w-72 flex-shrink-0 px-3 sm:px-4 py-2 border-r border-slate-200 sticky left-0 bg-white z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-0">
+                  <div className="w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 border-r border-slate-200 sticky left-0 bg-white z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-0">
                     <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                       <span
                         draggable
