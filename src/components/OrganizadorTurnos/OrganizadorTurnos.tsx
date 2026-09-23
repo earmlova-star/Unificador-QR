@@ -14,7 +14,8 @@ interface OrganizadorTurnosProps {
 }
 
 // Módulo "Organizador de Turnos": carta Gantt de cuadrillas mineras,
-// compartida entre coordinadores vía Supabase (ver add_organizador_turnos.sql).
+// compartida vía Supabase (ver add_organizador_turnos.sql) entre
+// coordinador y consultor (ver fix_organizador_turnos_rol_consultor.sql).
 // Independiente de faena/contrato — pedido explícito.
 export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [cuadrillas, setCuadrillas] = useState<CuadrillaTurno[]>([])

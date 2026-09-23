@@ -185,9 +185,10 @@ export function App() {
           <EntregaTurno usuario={usuario} contrato={contratoActivo} faenaActiva={faenaActiva} />
         )}
 
-        {activeView === 'organizador-turnos' && usuario.rol === UserRole.COORDINADOR && (
-          <OrganizadorTurnos usuario={usuario} />
-        )}
+        {activeView === 'organizador-turnos' &&
+          (usuario.rol === UserRole.COORDINADOR || usuario.rol === UserRole.CONSULTOR) && (
+            <OrganizadorTurnos usuario={usuario} />
+          )}
       </Suspense>
 
       {activeView === 'config' && (

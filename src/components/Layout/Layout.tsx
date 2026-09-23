@@ -248,9 +248,10 @@ export const Layout = ({
 
           {/* Organizador de Turnos: carta Gantt de cuadrillas (14x14, 7x7,
               4x3), compartida vía Supabase (ver add_organizador_turnos.sql).
-              Acceso restringido a coordinador, reforzado en RLS.
+              Acceso coordinador y consultor (ver
+              fix_organizador_turnos_rol_consultor.sql), reforzado en RLS.
               Independiente de faena/contrato — pedido explícito. */}
-          {usuario?.rol === UserRole.COORDINADOR && (
+          {(usuario?.rol === UserRole.COORDINADOR || usuario?.rol === UserRole.CONSULTOR) && (
             <NavItem
               icon={<IconOrganizadorTurnos />}
               label="Organizador de Turnos"
