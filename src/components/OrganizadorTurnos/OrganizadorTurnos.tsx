@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
 import { CuadrillaTurno, Usuario } from '@/types/index'
@@ -32,6 +32,16 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [arrastrandoId, setArrastrandoId] = useState<string | null>(null)
   const [sobreId, setSobreId] = useState<string | null>(null)
   const [columnaHover, setColumnaHover] = useState<number | null>(null)
+  const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
+
+  const alternarExpandida = (id: string) => {
+    setExpandidas((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(id)) siguiente.delete(id)
+      else siguiente.add(id)
+      return siguiente
+    })
+  }
 
   const cargar = async () => {
     setCargando(true)
@@ -257,10 +267,11 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               const segmentos = generarLineaTiempoCuadrilla(cuadrilla, inicioVentanaFecha, TAMANO_VENTANA)
               const estaArrastrando = arrastrandoId === cuadrilla.id
               const estaSobre = sobreId === cuadrilla.id && arrastrandoId !== cuadrilla.id
+              const estaExpandida = expandidas.has(cuadrilla.id)
 
               return (
+              <Fragment key={cuadrilla.id}>
                 <div
-                  key={cuadrilla.id}
                   className={`flex border-b border-slate-100 hover:bg-slate-50 transition-colors ${
                     estaArrastrando ? 'opacity-40' : ''
                   } ${estaSobre ? 'border-t-2 border-t-blue-500' : ''}`}
@@ -279,9 +290,23 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                       >
                         ⠿
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => alternarExpandida(cuadrilla.id)}
+                        title={estaExpandida ? 'Ocultar trabajadores asignados' : 'Ver trabajadores asignados'}
+                        className="text-slate-400 hover:text-slate-700 flex-shrink-0"
+                      >
+                        {estaExpandida ? '▾' : '▸'}
+                      </button>
                       <div className="min-w-0">
                         <h3 className="font-semibold text-sm text-slate-800 truncate">{cuadrilla.nombre}</h3>
-                        <p className="text-xs text-slate-500">{cuadrilla.trabajadores.length} trabajadores</p>
+                        <button
+                          type="button"
+                          onClick={() => alternarExpandida(cuadrilla.id)}
+                          className="text-xs text-slate-500 hover:text-blue-600 hover:underline"
+                        >
+                          {cuadrilla.trabajadores.length} trabajadores
+                        </button>
                       </div>
                     </div>
 
@@ -360,6 +385,39 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                     ))}
                   </div>
                 </div>
+
+                {estaExpandida && (
+                  <div className="bg-slate-50 border-b border-slate-100 px-4 sm:px-6 py-3">
+                    <p className="text-xs font-semibold text-slate-500 uppercase mb-2">
+                      Trabajadores asignados — {cuadrilla.nombre}
+                    </p>
+                    {cuadrilla.trabajadores.length === 0 ? (
+                      <p className="text-xs text-slate-400">Sin trabajadores asignados todavía.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="text-xs text-left min-w-[400px]">
+                          <thead>
+                            <tr className="text-slate-400 uppercase text-[10px]">
+                              <th className="font-semibold pr-4 pb-1">Nombre</th>
+                              <th className="font-semibold pr-4 pb-1">RUT</th>
+                              <th className="font-semibold pb-1">Cargo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cuadrilla.trabajadores.map((t) => (
+                              <tr key={t.id} className="border-t border-slate-200">
+                                <td className="pr-4 py-1 text-slate-800">{t.nombre} {t.apellido}</td>
+                                <td className="pr-4 py-1 text-slate-600">{t.rut}</td>
+                                <td className="py-1 text-slate-600">{t.cargo}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Fragment>
               )
             })}
           </div>
