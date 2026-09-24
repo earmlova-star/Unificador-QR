@@ -90,7 +90,9 @@ export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, u
 
   const guardar = async (
     c: Candidato,
-    cambios: Partial<Pick<ReservaPasaje, 'horario' | 'confirmada' | 'confirmada_por' | 'confirmada_en' | 'encargado_reserva' | 'observaciones'>>
+    cambios: Partial<
+      Pick<ReservaPasaje, 'horario' | 'confirmada' | 'confirmada_por' | 'confirmada_en' | 'encargado_reserva' | 'fecha_reserva' | 'observaciones'>
+    >
   ) => {
     const existente = reservaDe(c)
     const { origen, destino } = origenDestino(c.tipo, terminal, faena)
@@ -107,6 +109,7 @@ export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, u
         confirmada_por: existente?.confirmada_por ?? null,
         confirmada_en: existente?.confirmada_en ?? null,
         encargado_reserva: existente?.encargado_reserva ?? null,
+        fecha_reserva: existente?.fecha_reserva ?? null,
         observaciones: existente?.observaciones ?? null,
         creado_por: existente?.creado_por ?? usuario.id,
         ...cambios,
@@ -122,6 +125,20 @@ export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, u
       setError(traducirError(err, 'No se pudo guardar la reserva'))
     }
   }
+
+  // Encargado y Fecha de Reserva se editan una sola vez por día (en el
+  // encabezado del grupo de fecha), no por trabajador — pedido explícito
+  // 2026-09-24. Se aplican a TODAS las reservas de ese día (suben + bajan)
+  // en paralelo, reusando el mismo guardar() de cada fila.
+  const candidatosDeFecha = (fecha: string) => candidatos.filter((c) => c.fecha === fecha)
+
+  const valorGrupoFecha = (fecha: string, campo: 'encargado_reserva' | 'fecha_reserva'): string => {
+    const conValor = reservas.find((r) => r.fecha === fecha && r[campo])
+    return conValor?.[campo] ?? ''
+  }
+
+  const guardarGrupoFecha = (fecha: string, cambios: Partial<Pick<ReservaPasaje, 'encargado_reserva' | 'fecha_reserva'>>) =>
+    Promise.all(candidatosDeFecha(fecha).map((c) => guardar(c, cambios)))
 
   const alternarConfirmada = (c: Candidato) => {
     const confirmadaActual = reservaDe(c)?.confirmada ?? false
@@ -168,15 +185,6 @@ export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, u
         <td className="px-3 py-1.5">
           <input
             type="text"
-            defaultValue={reserva?.encargado_reserva ?? ''}
-            placeholder="—"
-            onBlur={(e) => { if (e.target.value !== (reserva?.encargado_reserva ?? '')) guardar(c, { encargado_reserva: e.target.value || null }) }}
-            className="w-32 px-2 py-1 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600"
-          />
-        </td>
-        <td className="px-3 py-1.5">
-          <input
-            type="text"
             defaultValue={reserva?.observaciones ?? ''}
             placeholder="—"
             onBlur={(e) => { if (e.target.value !== (reserva?.observaciones ?? '')) guardar(c, { observaciones: e.target.value || null }) }}
@@ -198,7 +206,6 @@ export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, u
         <th className="text-left font-semibold px-3 pb-1">Turno</th>
         <th className="text-left font-semibold px-3 pb-1">Origen → Destino</th>
         <th className="text-left font-semibold px-3 pb-1">Horario</th>
-        <th className="text-left font-semibold px-3 pb-1">Encargado</th>
         <th className="text-left font-semibold px-3 pb-1">Observaciones</th>
         <th className="text-center font-semibold px-3 pb-1">Confirmada</th>
       </tr>
@@ -245,7 +252,34 @@ export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, u
         <div className="px-4 sm:px-6 py-4 space-y-6 overflow-x-auto">
           {porFecha.map(([fecha, grupos]) => (
             <div key={fecha} className="border border-slate-200 rounded-lg overflow-hidden">
-              <p className="bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">{formatearFecha(fecha)}</p>
+              <div className="bg-slate-100 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <p className="text-xs font-bold text-slate-700">{formatearFecha(fecha)}</p>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-semibold text-slate-500 uppercase">Encargado</label>
+                  <input
+                    type="text"
+                    defaultValue={valorGrupoFecha(fecha, 'encargado_reserva')}
+                    placeholder="—"
+                    onBlur={(e) => {
+                      if (e.target.value !== valorGrupoFecha(fecha, 'encargado_reserva'))
+                        guardarGrupoFecha(fecha, { encargado_reserva: e.target.value || null })
+                    }}
+                    className="w-40 px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-semibold text-slate-500 uppercase">Fecha de reserva</label>
+                  <input
+                    type="date"
+                    defaultValue={valorGrupoFecha(fecha, 'fecha_reserva')}
+                    onBlur={(e) => {
+                      if (e.target.value !== valorGrupoFecha(fecha, 'fecha_reserva'))
+                        guardarGrupoFecha(fecha, { fecha_reserva: e.target.value || null })
+                    }}
+                    className="px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
 
               {grupos.subida.length > 0 && (
                 <div className="px-3 py-2 border-b border-slate-100 last:border-b-0">

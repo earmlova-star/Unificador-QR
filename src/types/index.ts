@@ -418,6 +418,11 @@ export interface ReservaPasaje {
   confirmada_en?: string | null;
 
   encargado_reserva?: string | null;
+  // Fecha en que se hizo/asignó la reserva — distinta de `fecha` (la de
+  // subida/bajada del trabajador). Pedido explícito 2026-09-24: un solo
+  // Encargado y Fecha de Reserva por día, en el encabezado de cada grupo
+  // de fecha, en vez de repetido por trabajador — ver ReservasPasajes.tsx.
+  fecha_reserva?: string | null;
   observaciones?: string | null;
 
   creado_por: string;

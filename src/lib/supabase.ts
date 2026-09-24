@@ -982,6 +982,7 @@ export const db = {
     confirmada_por: string | null
     confirmada_en: string | null
     encargado_reserva: string | null
+    fecha_reserva: string | null
     observaciones: string | null
     creado_por: string
   }) {
