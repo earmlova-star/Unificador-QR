@@ -406,11 +406,15 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         i === index
           ? {
               ...f,
-              cuadrillas: f.cuadrillas?.map((c) =>
-                c.id === cuadrillaId
-                  ? { ...c, actividades: c.actividades.map((v, ai) => (ai === actIndex ? !v : v)) }
-                  : c
-              ),
+              cuadrillas: f.cuadrillas?.map((c) => {
+                if (c.id !== cuadrillaId) return c
+                // Asignación directa por índice (no .map): una cuadrilla creada
+                // antes de agregar esta actividad tiene un array `actividades`
+                // más corto, y .map() no toca posiciones que no existen todavía.
+                const actividades = [...c.actividades]
+                actividades[actIndex] = !actividades[actIndex]
+                return { ...c, actividades }
+              }),
             }
           : f
       )
