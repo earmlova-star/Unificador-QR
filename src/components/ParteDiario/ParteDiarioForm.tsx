@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { db, storage } from '@lib/supabase'
 import {
   ActividadEjecutada,
   CARGOS_DIRECTOS,
   CARGOS_INDIRECTOS,
+  CuadrillaManoObra,
   EQUIPOS_MAQUINARIA,
   Faena,
   FAENA_LABELS,
@@ -18,6 +19,13 @@ import { DailyReportExcelPreview } from './DailyReportExcelPreview'
 import { traducirError } from '@lib/errores'
 import { useAutoguardado, leerBorrador, haceCuanto } from '@hooks/useBorradorLocal'
 import { hhDeFila, hhTotales, permisoDescanso } from '@lib/calculosHH'
+import {
+  actividadesValidas,
+  horasDirectaPorActividad,
+  horasMaquinariaPorActividad,
+  realinearActividadesCuadrilla,
+  quitarActividad as quitarActividadYRealinear,
+} from '@lib/actividades'
 import { HH_DIRECTAS_PROGRAMADO_POR_FECHA } from '@lib/hhProgramadoSchedule'
 
 interface ParteDiarioFormProps {
@@ -55,6 +63,11 @@ interface FilaManoObraDirecta {
   cargo: string
   contratados: number
   operativos: number
+  // Desglose opcional por cuadrilla (supervisor + su grupo de técnicos) —
+  // ver CuadrillaManoObra en types/index.ts. Si existe, `operativos` de
+  // arriba deja de tipearse a mano y pasa a ser la suma de estas (ver
+  // operativosEfectivos más abajo).
+  cuadrillas?: CuadrillaManoObra[]
 }
 
 interface FilaManoObraIndirecta {
@@ -118,9 +131,14 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         cargo,
         contratados: existente?.contratados ?? 0,
         operativos: existente?.operativos ?? 0,
+        cuadrillas: existente?.cuadrillas?.map((c) => ({ ...c, actividades: [...c.actividades] })),
       }
     })
   )
+  // Qué cargos de mano de obra directa tienen su desglose de cuadrillas
+  // desplegado — solo estado de UI, no se guarda (cargo es único dentro de
+  // CARGOS_DIRECTOS así que sirve como key).
+  const [cargosExpandidos, setCargosExpandidos] = useState<Set<string>>(new Set())
   const [manoObraIndirecta, setManoObraIndirecta] = useState<FilaManoObraIndirecta[]>(() =>
     CARGOS_INDIRECTOS.map((cargo) => {
       const existente = parteExistente?.mano_obra_indirecta.find((f) => f.cargo === cargo)
@@ -289,7 +307,16 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     if (actividades.length >= MAX_ACTIVIDADES) return
     setActividades((prev) => [...prev, actividadVacia()])
   }
-  const quitarActividad = (index: number) => setActividades((prev) => prev.filter((_, i) => i !== index))
+  // Quitar una actividad tiene que sacar esa misma posición de las horas de
+  // Maquinaria y de la participación de cada cuadrilla de mano de obra
+  // directa (estado propio por posición, a diferencia del resto de Directa
+  // que se deriva sola) — ver src/lib/actividades.ts para el porqué y sus pruebas.
+  const quitarActividad = (index: number) => {
+    const resultado = quitarActividadYRealinear(actividades, maquinaria, index, manoObraDirecta)
+    setActividades(resultado.actividades)
+    setMaquinaria(resultado.maquinaria)
+    if (resultado.manoObraDirecta) setManoObraDirecta(resultado.manoObraDirecta)
+  }
 
   // ---------- Mano de obra directa ----------
   const actualizarDirecta = (index: number, campo: 'contratados' | 'operativos', valor: string) => {
@@ -298,13 +325,97 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     )
   }
 
+  // Operativos "de verdad" de un cargo: si tiene cuadrillas, es la suma de
+  // sus operativos (el campo Operativos del cargo pasa a ser de solo
+  // lectura); si no, es el número tipeado a mano de siempre. Todo lo que
+  // antes leía fila.operativos para mostrar/calcular pasa a usar esto, para
+  // que un cargo sin cuadrillas siga funcionando exactamente igual que hoy.
+  const operativosEfectivos = (fila: FilaManoObraDirecta): number =>
+    fila.cuadrillas && fila.cuadrillas.length > 0 ? sumar(fila.cuadrillas.map((c) => c.operativos)) : fila.operativos
+
   // HH de un cargo en cada actividad = HH que dura la actividad (el
-  // "Cantidad" de Actividades Ejecutadas) × operativos de ese cargo. Ya no
-  // se tipea a mano por celda — se deriva de esos dos valores en cada
-  // render, así que si cualquiera de los dos cambia, la tabla se
-  // actualiza sola.
-  const calcularHorasCargo = (fila: FilaManoObraDirecta): number[] =>
-    actividades.slice(0, numActividades).map((act) => (act.cantidad ?? 0) * fila.operativos)
+  // "Cantidad" de Actividades Ejecutadas) × operativos de ese cargo — o,
+  // si el cargo tiene cuadrillas (supervisor + su grupo, pedido explícito
+  // 2026-09-24), solo los operativos de las cuadrillas que marcaron
+  // participar en esa actividad puntual, no el total del cargo repartido
+  // por igual en todas. Ya no se tipea a mano por celda — se deriva en
+  // cada render, así que si algo cambia, la tabla se actualiza sola.
+  const calcularHorasCargo = (fila: FilaManoObraDirecta): number[] => {
+    const acts = actividades.slice(0, numActividades)
+    if (fila.cuadrillas && fila.cuadrillas.length > 0) {
+      const cuadrillas = fila.cuadrillas
+      return acts.map((act, i) => {
+        const operativosEnActividad = sumar(cuadrillas.map((c) => (c.actividades[i] ? c.operativos : 0)))
+        return (act.cantidad ?? 0) * operativosEnActividad
+      })
+    }
+    return acts.map((act) => (act.cantidad ?? 0) * fila.operativos)
+  }
+
+  // ---------- Cuadrillas de mano de obra directa ----------
+  const alternarCargoExpandido = (cargo: string) => {
+    setCargosExpandidos((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(cargo)) siguiente.delete(cargo)
+      else siguiente.add(cargo)
+      return siguiente
+    })
+  }
+
+  const agregarCuadrilla = (index: number) => {
+    setCargosExpandidos((prev) => new Set(prev).add(manoObraDirecta[index].cargo))
+    setManoObraDirecta((prev) =>
+      prev.map((f, i) =>
+        i === index
+          ? {
+              ...f,
+              cuadrillas: [
+                ...(f.cuadrillas ?? []),
+                { id: crypto.randomUUID(), supervisor: '', operativos: 0, actividades: Array(numActividades).fill(false) },
+              ],
+            }
+          : f
+      )
+    )
+  }
+
+  const eliminarCuadrilla = (index: number, cuadrillaId: string) => {
+    setManoObraDirecta((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, cuadrillas: f.cuadrillas?.filter((c) => c.id !== cuadrillaId) } : f))
+    )
+  }
+
+  const actualizarCuadrilla = (index: number, cuadrillaId: string, campo: 'supervisor' | 'operativos', valor: string) => {
+    setManoObraDirecta((prev) =>
+      prev.map((f, i) =>
+        i === index
+          ? {
+              ...f,
+              cuadrillas: f.cuadrillas?.map((c) =>
+                c.id === cuadrillaId ? { ...c, [campo]: campo === 'operativos' ? Number(valor) || 0 : valor } : c
+              ),
+            }
+          : f
+      )
+    )
+  }
+
+  const alternarActividadCuadrilla = (index: number, cuadrillaId: string, actIndex: number) => {
+    setManoObraDirecta((prev) =>
+      prev.map((f, i) =>
+        i === index
+          ? {
+              ...f,
+              cuadrillas: f.cuadrillas?.map((c) =>
+                c.id === cuadrillaId
+                  ? { ...c, actividades: c.actividades.map((v, ai) => (ai === actIndex ? !v : v)) }
+                  : c
+              ),
+            }
+          : f
+      )
+    )
+  }
 
   // ---------- Mano de obra indirecta ----------
   const actualizarIndirecta = (index: number, campo: 'contratados' | 'operativos', valor: string) => {
@@ -366,20 +477,31 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     setError(null)
 
     try {
-      const actividadesValidas = actividades.filter((a) => a.area.trim() || a.descripcion.trim())
+      // Las filas de actividad en blanco (típico dejar una vacía a medias) se
+      // filtran ANTES de calcular las horas por actividad, y con los mismos
+      // índices para ambas cosas — ver src/lib/actividades.ts y sus pruebas.
+      const actividadesAGuardar = actividadesValidas(actividades)
 
       const camposComunes = {
         fecha,
         condicion_climatica: condicionClimatica || null,
         faena,
 
-        actividades: actividadesValidas,
-        mano_obra_directa: manoObraDirecta.map((f) => ({
-          cargo: f.cargo,
-          contratados: f.contratados,
-          operativos: f.operativos,
-          horas_por_actividad: calcularHorasCargo(f),
-        })),
+        actividades: actividadesAGuardar,
+        mano_obra_directa: manoObraDirecta.map((f) => {
+          const cuadrillasRealineadas = f.cuadrillas?.map((c) => ({
+            ...c,
+            actividades: realinearActividadesCuadrilla(actividades, c.actividades),
+          }))
+          const operativos = operativosEfectivos(f)
+          return {
+            cargo: f.cargo,
+            contratados: f.contratados,
+            operativos,
+            horas_por_actividad: horasDirectaPorActividad(actividades, operativos, cuadrillasRealineadas),
+            cuadrillas: cuadrillasRealineadas,
+          }
+        }),
         mano_obra_indirecta: manoObraIndirecta.map((f) => ({
           cargo: f.cargo,
           contratados: f.contratados,
@@ -825,7 +947,8 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         </h3>
         <p className="text-xs text-slate-400 mb-3">
           Las columnas Act.1..Act.{numActividades} se calculan solas: HH x actividad (campo "Cantidad" de
-          Actividades Ejecutadas) × Operativos de cada cargo.
+          Actividades Ejecutadas) × Operativos de cada cargo (o, si el cargo tiene cuadrillas, solo los
+          operativos de las cuadrillas que participan en cada actividad).
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
@@ -844,42 +967,153 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
               </tr>
             </thead>
             <tbody>
-              {manoObraDirecta.map((fila, index) => (
-                <tr key={fila.cargo} className="border-t border-slate-100">
-                  <td className="py-1 pr-2 text-slate-700">{fila.cargo}</td>
-                  <td className="py-1 px-1">
-                    <input
-                      type="number"
-                      value={fila.contratados || ''}
-                      onChange={(e) => actualizarDirecta(index, 'contratados', e.target.value)}
-                      className={inputNumClase}
-                    />
-                  </td>
-                  <td className="py-1 px-1">
-                    <input
-                      type="number"
-                      value={fila.operativos || ''}
-                      onChange={(e) => actualizarDirecta(index, 'operativos', e.target.value)}
-                      className={inputNumClase}
-                    />
-                  </td>
-                  <td className="py-1 px-1 text-right text-slate-400 font-mono text-xs">
-                    {permisoDescanso(fila)}
-                  </td>
-                  {calcularHorasCargo(fila).map((horas, actIndex) => (
-                    <td key={actIndex} className="py-1 px-1 text-right font-mono text-xs text-slate-500">
-                      {horas || ''}
-                    </td>
-                  ))}
-                  <td className="py-1 pl-1 text-right font-mono text-xs text-slate-500">
-                    {sumar(calcularHorasCargo(fila))}
-                  </td>
-                </tr>
-              ))}
+              {manoObraDirecta.map((fila, index) => {
+                const tieneCuadrillas = Boolean(fila.cuadrillas && fila.cuadrillas.length > 0)
+                const expandido = cargosExpandidos.has(fila.cargo)
+                const totalColumnas = 5 + numActividades
+                return (
+                  <Fragment key={fila.cargo}>
+                    <tr className="border-t border-slate-100">
+                      <td className="py-1 pr-2 text-slate-700">
+                        <div className="flex items-center gap-1.5">
+                          {tieneCuadrillas && (
+                            <button
+                              type="button"
+                              onClick={() => alternarCargoExpandido(fila.cargo)}
+                              className="text-slate-400 hover:text-slate-700 flex-shrink-0"
+                              title={expandido ? 'Ocultar cuadrillas' : 'Ver cuadrillas'}
+                            >
+                              {expandido ? '▾' : '▸'}
+                            </button>
+                          )}
+                          <span>{fila.cargo}</span>
+                          {!tieneCuadrillas && (
+                            <button
+                              type="button"
+                              onClick={() => agregarCuadrilla(index)}
+                              title="Repartir los operativos de este cargo entre cuadrillas (supervisor + su grupo), cada una con las actividades en que participó"
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 flex-shrink-0"
+                            >
+                              + Cuadrilla
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-1 px-1">
+                        <input
+                          type="number"
+                          value={fila.contratados || ''}
+                          onChange={(e) => actualizarDirecta(index, 'contratados', e.target.value)}
+                          className={inputNumClase}
+                        />
+                      </td>
+                      <td className="py-1 px-1">
+                        {tieneCuadrillas ? (
+                          <span
+                            title="Suma de los operativos de las cuadrillas de este cargo — ya no se tipea a mano."
+                            className="block text-right font-mono text-xs text-slate-500 px-2 py-1"
+                          >
+                            {operativosEfectivos(fila)}
+                          </span>
+                        ) : (
+                          <input
+                            type="number"
+                            value={fila.operativos || ''}
+                            onChange={(e) => actualizarDirecta(index, 'operativos', e.target.value)}
+                            className={inputNumClase}
+                          />
+                        )}
+                      </td>
+                      <td className="py-1 px-1 text-right text-slate-400 font-mono text-xs">
+                        {permisoDescanso({ ...fila, operativos: operativosEfectivos(fila) })}
+                      </td>
+                      {calcularHorasCargo(fila).map((horas, actIndex) => (
+                        <td key={actIndex} className="py-1 px-1 text-right font-mono text-xs text-slate-500">
+                          {horas || ''}
+                        </td>
+                      ))}
+                      <td className="py-1 pl-1 text-right font-mono text-xs text-slate-500">
+                        {sumar(calcularHorasCargo(fila))}
+                      </td>
+                    </tr>
+
+                    {tieneCuadrillas && expandido && (
+                      <tr key={`${fila.cargo}-cuadrillas`} className="bg-slate-50">
+                        <td colSpan={totalColumnas} className="px-2 py-2">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-slate-400 uppercase text-[10px]">
+                                <th className="text-left font-semibold pb-1 pr-2">Supervisor</th>
+                                <th className="text-right font-semibold pb-1 px-2 w-20">Operativos</th>
+                                {Array.from({ length: numActividades }).map((_, i) => (
+                                  <th key={i} className="text-center font-semibold pb-1 px-1 w-10">
+                                    Act.{i + 1}
+                                  </th>
+                                ))}
+                                <th className="w-8" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {fila.cuadrillas!.map((c) => (
+                                <tr key={c.id} className="border-t border-slate-200">
+                                  <td className="py-1 pr-2">
+                                    <input
+                                      type="text"
+                                      value={c.supervisor}
+                                      onChange={(e) => actualizarCuadrilla(index, c.id, 'supervisor', e.target.value)}
+                                      placeholder="Nombre del supervisor"
+                                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600"
+                                    />
+                                  </td>
+                                  <td className="py-1 px-2">
+                                    <input
+                                      type="number"
+                                      value={c.operativos || ''}
+                                      onChange={(e) => actualizarCuadrilla(index, c.id, 'operativos', e.target.value)}
+                                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs text-right focus:outline-none focus:border-blue-600"
+                                    />
+                                  </td>
+                                  {Array.from({ length: numActividades }).map((_, actIndex) => (
+                                    <td key={actIndex} className="text-center px-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={c.actividades[actIndex] ?? false}
+                                        onChange={() => alternarActividadCuadrilla(index, c.id, actIndex)}
+                                        className="w-3.5 h-3.5"
+                                      />
+                                    </td>
+                                  ))}
+                                  <td className="text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => eliminarCuadrilla(index, c.id)}
+                                      title="Quitar cuadrilla"
+                                      className="text-red-600 hover:text-red-700"
+                                    >
+                                      🗑
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <button
+                            type="button"
+                            onClick={() => agregarCuadrilla(index)}
+                            className="mt-2 text-[11px] px-2 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700"
+                          >
+                            + Agregar cuadrilla
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
               <tr className="border-t-2 border-slate-300 font-semibold text-slate-700">
                 <td className="py-1 pr-2">Total</td>
                 <td className="py-1 px-1 text-right">{sumar(manoObraDirecta.map((f) => f.contratados))}</td>
-                <td className="py-1 px-1 text-right">{sumar(manoObraDirecta.map((f) => f.operativos))}</td>
+                <td className="py-1 px-1 text-right">{sumar(manoObraDirecta.map(operativosEfectivos))}</td>
                 <td />
                 <td colSpan={numActividades} />
                 <td className="py-1 pl-1 text-right">{totalHhDirectas}</td>

@@ -246,12 +246,31 @@ export interface ActividadEjecutada {
   cantidad: number | null;
 }
 
+// Desglose opcional de un cargo de Fuerza Laboral Directa por cuadrilla
+// (supervisor + su grupo de técnicos) — pedido explícito 2026-09-24: antes
+// los operativos de un cargo se repartían por igual entre TODAS las
+// actividades válidas; con cuadrillas, cada una participa solo en las
+// actividades que marque, y sus HH se sumam por actividad. `actividades`
+// usa el mismo indexado posicional que `horas_por_actividad` (índice i =
+// Act.i+1). Es un detalle interno: el Excel exportado sigue mostrando un
+// solo total por cargo (pedido explícito) — ver ParteDiarioForm.tsx.
+export interface CuadrillaManoObra {
+  id: string;
+  supervisor: string;
+  operativos: number;
+  actividades: boolean[];
+}
+
 export interface LineaManoObra {
   cargo: string;
   contratados: number;
   operativos: number;
   // Solo mano de obra directa reparte horas por actividad (hasta 7, Act.1..Act.7)
   horas_por_actividad?: number[];
+  // Solo mano de obra directa — si tiene cuadrillas, `operativos` pasa a
+  // ser la suma automática de sus operativos (ver operativosEfectivos en
+  // ParteDiarioForm.tsx) en vez de un valor tipeado a mano.
+  cuadrillas?: CuadrillaManoObra[];
 }
 
 export interface LineaMaquinaria {
