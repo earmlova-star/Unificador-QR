@@ -291,6 +291,11 @@ export interface Jornada {
 export interface FotoParteDiario {
   url: string;
   caption?: string;
+  // Índice (0-based) en `actividades` de la actividad a la que corresponde
+  // esta foto — pedido explícito 2026-09-24: las fotos se cargan agrupadas
+  // por N° de Actividad. Ausente en fotos de reportes guardados antes de
+  // este cambio. Ver ParteDiarioForm.tsx y generarExcelParteDiario.ts.
+  actividadIndex?: number;
 }
 
 export interface ParteDiario {

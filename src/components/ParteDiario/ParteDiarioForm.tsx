@@ -23,6 +23,7 @@ import {
   actividadesValidas,
   horasDirectaPorActividad,
   horasMaquinariaPorActividad,
+  indicesActividadesValidas,
   realinearActividadesCuadrilla,
   quitarActividad as quitarActividadYRealinear,
 } from '@lib/actividades'
@@ -200,8 +201,26 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
   )
 
   const [fotos, setFotos] = useState<FotoPendiente[]>(() =>
-    (parteExistente?.fotos ?? []).map((f) => ({ url: f.url, caption: f.caption ?? '', preview: f.url }))
+    (parteExistente?.fotos ?? []).map((f) => ({
+      url: f.url,
+      caption: f.caption ?? '',
+      preview: f.url,
+      actividadIndex: f.actividadIndex,
+    }))
   )
+  // Qué secciones de "Fotos por actividad" están abiertas. -1 es la sección
+  // "Sin actividad asignada" (fotos de reportes guardados antes de este
+  // cambio, o que quedaron sin actividad al borrarse la suya — ver
+  // quitarActividad más abajo).
+  const [fotosExpandidas, setFotosExpandidas] = useState<Set<number>>(new Set())
+  const alternarFotosExpandida = (idx: number) => {
+    setFotosExpandidas((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(idx)) siguiente.delete(idx)
+      else siguiente.add(idx)
+      return siguiente
+    })
+  }
 
   const [numeroReporte, setNumeroReporte] = useState<number | null>(() => parteExistente?.numero_reporte ?? null)
   const [isLoading, setIsLoading] = useState(false)
@@ -316,6 +335,20 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     setActividades(resultado.actividades)
     setMaquinaria(resultado.maquinaria)
     if (resultado.manoObraDirecta) setManoObraDirecta(resultado.manoObraDirecta)
+    // Las fotos de la actividad borrada quedan "sin actividad asignada"
+    // (no se borran) y las de las actividades siguientes bajan un puesto,
+    // para seguir apuntando a la misma actividad de siempre.
+    setFotos((prev) =>
+      prev.map((f) =>
+        f.actividadIndex === undefined
+          ? f
+          : f.actividadIndex === index
+          ? { ...f, actividadIndex: undefined }
+          : f.actividadIndex > index
+          ? { ...f, actividadIndex: f.actividadIndex - 1 }
+          : f
+      )
+    )
   }
 
   // ---------- Mano de obra directa ----------
@@ -601,7 +634,24 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
       // salir del bucle entero: el reporte quedaba guardado con fotos: [],
       // las anteriores quedaban huérfanas en Storage, y el mensaje de error
       // no decía que el reporte SÍ se había guardado.
-      const fotosFinal: { url: string; caption: string }[] = []
+      // El N° de Actividad de cada foto vive en el estado del formulario
+      // (`fotos`) como índice en el array `actividades` SIN filtrar (el que
+      // se ve en pantalla) — igual que horasDirectaPorActividad/cuadrillas,
+      // acá se realinea a la posición final entre las actividades válidas
+      // (o se deja sin actividad si la suya quedó en blanco y se filtró al
+      // guardar) SOLO para el payload que se manda a la base de datos. El
+      // estado `fotos` en sí NUNCA guarda el índice ya realineado: si se
+      // hiciera, un reintento volvería a realinear un valor que ya no es un
+      // índice sin filtrar y quedaría mal.
+      const indicesValidos = indicesActividadesValidas(actividades)
+      const actividadIndexFinal = (actividadIndex?: number): number | undefined => {
+        if (actividadIndex === undefined) return undefined
+        const posicion = indicesValidos.indexOf(actividadIndex)
+        return posicion === -1 ? undefined : posicion
+      }
+
+      const fotosFinal: { url: string; caption: string; actividadIndex?: number }[] = []
+      const fotosExitosas: FotoPendiente[] = []
       const fotosPendientes: FotoPendiente[] = []
 
       for (let i = 0; i < fotos.length; i++) {
@@ -610,14 +660,16 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
           try {
             const path = `partes-diarios/${contrato.id}/${parte.id}/${Date.now()}-${i}-${foto.file.name}`
             await storage.uploadFoto('documentos', path, foto.file)
-            const url = await storage.getPublicUrl('documentos', path)
-            fotosFinal.push({ url, caption: foto.caption })
+            const url = await storage.getSignedUrl('documentos', path)
+            fotosFinal.push({ url, caption: foto.caption, actividadIndex: actividadIndexFinal(foto.actividadIndex) })
+            fotosExitosas.push({ url, caption: foto.caption, preview: url, actividadIndex: foto.actividadIndex })
           } catch {
             // Se guarda para reintentarla; el resto del reporte igual se salva.
             fotosPendientes.push(foto)
           }
         } else if (foto.url) {
-          fotosFinal.push({ url: foto.url, caption: foto.caption })
+          fotosFinal.push({ url: foto.url, caption: foto.caption, actividadIndex: actividadIndexFinal(foto.actividadIndex) })
+          fotosExitosas.push(foto)
         }
       }
 
@@ -629,7 +681,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
       if (fotosPendientes.length > 0) {
         // El formulario queda abierto con solo las fotos que faltan, para
         // que "Guardar" de nuevo reintente únicamente esas.
-        setFotos([...fotosFinal.map((f) => ({ url: f.url, caption: f.caption, preview: f.url })), ...fotosPendientes])
+        setFotos([...fotosExitosas, ...fotosPendientes])
         setError(
           `El reporte se guardó, pero ${fotosPendientes.length} foto${fotosPendientes.length === 1 ? '' : 's'} no se pudo subir por problemas de conexión. ` +
             'Vuelve a tocar Guardar cuando tengas señal para reintentar solo esas.'
@@ -1285,10 +1337,79 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         </div>
       </section>
 
-      {/* Fotos */}
+      {/* Fotos — agrupadas por N° de Actividad: se abre la actividad, se
+          cargan sus fotos, se les pone nombre, y se pasa a la siguiente
+          (pedido explícito 2026-09-24). Cada sección es independiente de
+          las demás, en cualquier orden — no hay flujo forzado. */}
       <section>
-        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Fotos del día</h3>
-        <GestorFotos fotos={fotos} onChange={setFotos} />
+        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-1">Fotos del día</h3>
+        <p className="text-xs text-slate-400 mb-3">Abre la actividad correspondiente para cargar y nombrar sus fotos.</p>
+        <div className="space-y-2">
+          {actividades.map((act, idx) => {
+            const fotosActividad = fotos.filter((f) => f.actividadIndex === idx)
+            const expandida = fotosExpandidas.has(idx)
+            return (
+              <div key={idx} className="border border-slate-200 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => alternarFotosExpandida(idx)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-slate-700 bg-slate-50 hover:bg-slate-100"
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-slate-400 flex-shrink-0">{expandida ? '▾' : '▸'}</span>
+                    <span className="font-medium flex-shrink-0">Act.{idx + 1}</span>
+                    {(act.descripcion || act.area) && <span className="text-slate-400 truncate">— {act.descripcion || act.area}</span>}
+                  </span>
+                  <span className="text-xs text-slate-400 flex-shrink-0">
+                    {fotosActividad.length} foto{fotosActividad.length === 1 ? '' : 's'}
+                  </span>
+                </button>
+                {expandida && (
+                  <div className="p-3">
+                    <GestorFotos
+                      fotos={fotosActividad}
+                      onChange={(nuevas) => {
+                        // Solo las que vengan sin actividadIndex son fotos recién
+                        // agregadas acá adentro — se etiquetan con esta actividad;
+                        // las ya etiquetadas (reordenadas, renombradas o intactas)
+                        // se respetan tal cual.
+                        const etiquetadas = nuevas.map((f) => (f.actividadIndex === undefined ? { ...f, actividadIndex: idx } : f))
+                        setFotos((prev) => [...prev.filter((f) => f.actividadIndex !== idx), ...etiquetadas])
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {fotos.some((f) => f.actividadIndex === undefined) && (
+            <div className="border border-amber-200 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => alternarFotosExpandida(-1)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-amber-800 bg-amber-50 hover:bg-amber-100"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="text-amber-500">{fotosExpandidas.has(-1) ? '▾' : '▸'}</span>
+                  <span className="font-medium">Sin actividad asignada</span>
+                </span>
+                <span className="text-xs text-amber-600 flex-shrink-0">
+                  {fotos.filter((f) => f.actividadIndex === undefined).length} foto
+                  {fotos.filter((f) => f.actividadIndex === undefined).length === 1 ? '' : 's'}
+                </span>
+              </button>
+              {fotosExpandidas.has(-1) && (
+                <div className="p-3">
+                  <GestorFotos
+                    fotos={fotos.filter((f) => f.actividadIndex === undefined)}
+                    onChange={(nuevas) => setFotos((prev) => [...prev.filter((f) => f.actividadIndex !== undefined), ...nuevas])}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Comentario del contratista */}

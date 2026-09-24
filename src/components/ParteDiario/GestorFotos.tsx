@@ -16,6 +16,10 @@ export interface FotoPendiente {
   url?: string
   caption: string
   preview: string // <img src> — blob: para nuevas, la URL real para existentes
+  // Índice (0-based) en `actividades` de la actividad a la que corresponde
+  // esta foto — lo pone ParteDiarioForm.tsx al agregar la foto dentro de la
+  // sección de su actividad; este componente no lo lee ni lo escribe.
+  actividadIndex?: number
 }
 
 interface GestorFotosProps {
