@@ -373,6 +373,34 @@ export interface CuadrillaTurno {
   trabajadores: TrabajadorCuadrilla[];
 }
 
+// Módulo "Reservas de Pasajes" (pestaña de Organizador de Turnos, ver
+// add_reservas_pasaje.sql). Una fila por (trabajador, fecha, tipo) — solo
+// existe en la base una vez que alguien edita algo de esa reserva; antes
+// de eso es una fila candidata calculada en el frontend desde las
+// subidas/bajadas del turno.
+export interface ReservaPasaje {
+  id: string;
+  trabajador_id: string;
+
+  fecha: string;
+  tipo: 'subida' | 'bajada';
+
+  origen: string;
+  destino: string;
+  horario?: string | null;
+
+  confirmada: boolean;
+  confirmada_por?: string | null;
+  confirmada_en?: string | null;
+
+  encargado_reserva?: string | null;
+  observaciones?: string | null;
+
+  creado_por: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // Listas fijas de cargos/equipos del contrato 12501191 (ver MAPEO_CAMPOS.md).
 // Si el día de mañana hay más de un contrato con Daily Report y su propia
 // lista de cargos, esto pasa a vivir en la tabla `contratos` (columna

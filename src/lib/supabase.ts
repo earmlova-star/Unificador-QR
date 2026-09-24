@@ -941,4 +941,49 @@ export const db = {
     const { error } = await supabase.from('cuadrillas_turno_trabajadores').delete().eq('id', id)
     if (error) throw error
   },
+
+  // ---------- Reservas de Pasajes ----------
+  // Ver add_reservas_pasaje.sql. Mismo acceso RLS que cuadrillas_turno
+  // (coordinador y consultor). Las filas candidatas (quién sube/baja y
+  // cuándo) se calculan en el frontend desde el motor de turnos — esto
+  // solo trae/guarda el estado propio de cada reserva ya existente.
+  async obtenerReservasPasaje(fechaDesde: string, fechaHasta: string) {
+    const { data, error } = await supabase
+      .from('reservas_pasaje')
+      .select('*')
+      .gte('fecha', fechaDesde)
+      .lte('fecha', fechaHasta)
+
+    if (error) throw error
+    return data
+  },
+
+  // Upsert con todas las columnas NOT NULL siempre presentes en el
+  // payload (trabajador_id, fecha, tipo, origen, destino, creado_por) —
+  // un INSERT ... ON CONFLICT DO UPDATE valida esas columnas en la fila
+  // candidata del INSERT antes de resolver el conflicto (mismo problema
+  // que ya se dio en reordenarCuadrillasTurno con un upsert parcial).
+  async guardarReservaPasaje(reserva: {
+    trabajador_id: string
+    fecha: string
+    tipo: 'subida' | 'bajada'
+    origen: string
+    destino: string
+    horario: string | null
+    confirmada: boolean
+    confirmada_por: string | null
+    confirmada_en: string | null
+    encargado_reserva: string | null
+    observaciones: string | null
+    creado_por: string
+  }) {
+    const { data, error } = await supabase
+      .from('reservas_pasaje')
+      .upsert([{ ...reserva, updated_at: new Date().toISOString() }], { onConflict: 'trabajador_id,fecha,tipo' })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
 }

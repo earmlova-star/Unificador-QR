@@ -9,16 +9,22 @@ import { esFeriado, nombreFeriado } from './lib/feriados'
 import { ModalAgregarTurno } from './ModalAgregarTurno'
 import { ModalEditarTurno } from './ModalEditarTurno'
 import { ModalAgregarFuncionario } from './ModalAgregarFuncionario'
+import { ReservasPasajes } from './ReservasPasajes'
 
 interface OrganizadorTurnosProps {
   usuario: Usuario
 }
 
+type Vista = 'gantt' | 'reservas'
+
 // Módulo "Organizador de Turnos": carta Gantt de cuadrillas mineras,
 // compartida vía Supabase (ver add_organizador_turnos.sql) entre
 // coordinador y consultor (ver fix_organizador_turnos_rol_consultor.sql).
-// Independiente de faena/contrato — pedido explícito.
+// Independiente de faena/contrato — pedido explícito. Incluye la pestaña
+// "Reservas de Pasajes" (ver add_reservas_pasaje.sql), que organiza la
+// reserva de buses según las subidas/bajadas ya calculadas acá.
 export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
+  const [vista, setVista] = useState<Vista>('gantt')
   const [cuadrillas, setCuadrillas] = useState<CuadrillaTurno[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -188,53 +194,76 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           <p className="text-sm text-slate-500">Carta Gantt de cuadrillas: operaciones, tránsito y descansos</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500 uppercase mr-1">Preconfigurar:</span>
-          {PRESETS_TURNO.map((preset) => (
+        {vista === 'gantt' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase mr-1">Preconfigurar:</span>
+            {PRESETS_TURNO.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => setModalPatron(preset)}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+              >
+                {preset.nombre}
+              </button>
+            ))}
             <button
-              key={preset.id}
               type="button"
-              onClick={() => setModalPatron(preset)}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+              onClick={() => setModalPatron(null)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors"
             >
-              {preset.nombre}
+              + Agregar Turno
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setModalPatron(null)}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-          >
-            + Agregar Turno
-          </button>
-          <button
-            type="button"
-            onClick={() => setCuadrillaFuncionarioId(null)}
-            disabled={cuadrillas.length === 0}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-800 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            + Agregar Funcionario
-          </button>
-          <button
-            type="button"
-            onClick={() => setBloqueoGlobal((v) => !v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              bloqueoGlobal ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
-            }`}
-            title="Al mover la fecha de un turno con ← →, mover también todos los demás"
-          >
-            {bloqueoGlobal ? '🔒 Sincronizado' : '🔓 Individual'}
-          </button>
-          <button
-            type="button"
-            onClick={cargar}
-            disabled={cargando}
-            title="Volver a cargar los turnos desde el servidor — no hay sincronización en tiempo real, así que los cambios de otro coordinador no aparecen solos"
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors disabled:opacity-40"
-          >
-            {cargando ? '⏳ Actualizando…' : '↻ Actualizar'}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setCuadrillaFuncionarioId(null)}
+              disabled={cuadrillas.length === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-800 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              + Agregar Funcionario
+            </button>
+            <button
+              type="button"
+              onClick={() => setBloqueoGlobal((v) => !v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                bloqueoGlobal ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+              }`}
+              title="Al mover la fecha de un turno con ← →, mover también todos los demás"
+            >
+              {bloqueoGlobal ? '🔒 Sincronizado' : '🔓 Individual'}
+            </button>
+            <button
+              type="button"
+              onClick={cargar}
+              disabled={cargando}
+              title="Volver a cargar los turnos desde el servidor — no hay sincronización en tiempo real, así que los cambios de otro coordinador no aparecen solos"
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors disabled:opacity-40"
+            >
+              {cargando ? '⏳ Actualizando…' : '↻ Actualizar'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1 px-4 sm:px-6 pt-3 border-b border-slate-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setVista('gantt')}
+          className={`px-3 py-1.5 rounded-t-lg text-sm font-semibold transition-colors ${
+            vista === 'gantt' ? 'bg-blue-50 text-blue-700 border border-b-0 border-slate-200' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          📅 Carta Gantt
+        </button>
+        <button
+          type="button"
+          onClick={() => setVista('reservas')}
+          className={`px-3 py-1.5 rounded-t-lg text-sm font-semibold transition-colors ${
+            vista === 'reservas' ? 'bg-blue-50 text-blue-700 border border-b-0 border-slate-200' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          🚌 Reservas de Pasajes
+        </button>
       </div>
 
       {error && (
@@ -265,7 +294,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         </button>
       </div>
 
-      {cargando ? (
+      {vista === 'gantt' && (cargando ? (
         <p className="text-sm text-slate-500 py-12 text-center">Cargando…</p>
       ) : cuadrillas.length === 0 ? (
         <div className="py-12 text-center">
@@ -502,14 +531,20 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
             })}
           </div>
         </div>
+      ))}
+
+      {vista === 'gantt' && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 sm:px-6 py-3 border-t border-slate-200 text-xs text-slate-500">
+          <span className="font-semibold w-full sm:w-auto">Leyenda:</span>
+          <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-amber-800 inline-block" />Subida / Bajada</div>
+          <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-amber-400 inline-block" />Turno en Faena</div>
+          <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-slate-200 inline-block" />Descanso</div>
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 sm:px-6 py-3 border-t border-slate-200 text-xs text-slate-500">
-        <span className="font-semibold w-full sm:w-auto">Leyenda:</span>
-        <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-amber-800 inline-block" />Subida / Bajada</div>
-        <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-amber-400 inline-block" />Turno en Faena</div>
-        <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-slate-200 inline-block" />Descanso</div>
-      </div>
+      {vista === 'reservas' && (
+        <ReservasPasajes cuadrillas={cuadrillas} inicioVentanaFecha={inicioVentanaFecha} diasVentana={TAMANO_VENTANA} usuario={usuario} />
+      )}
 
       {modalPatron !== undefined && (
         <ModalAgregarTurno
