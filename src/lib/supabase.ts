@@ -925,6 +925,14 @@ export const db = {
     return data
   },
 
+  // Un solo insert para toda la lista — la carga masiva no gana nada
+  // haciendo N round-trips secuenciales cuando la API acepta un array.
+  async agregarTrabajadoresCuadrilla(trabajadores: { cuadrilla_id: string; nombre: string; apellido: string; rut: string; cargo: string }[]) {
+    const { data, error } = await supabase.from('cuadrillas_turno_trabajadores').insert(trabajadores).select()
+    if (error) throw error
+    return data
+  },
+
   async actualizarTrabajadorCuadrilla(id: string, cambios: Partial<{ nombre: string; apellido: string; rut: string; cargo: string }>) {
     const { data, error } = await supabase
       .from('cuadrillas_turno_trabajadores')

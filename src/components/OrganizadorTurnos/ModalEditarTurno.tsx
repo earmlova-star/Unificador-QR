@@ -7,6 +7,7 @@ import { PRESETS_TURNO, PatronTurno } from './lib/presetsTurno'
 import { TEMAS_COLOR } from './lib/coloresTurno'
 import { CALENDARIO_INICIO, CALENDARIO_FIN } from './lib/rangoFechas'
 import { validarRut, formatearRut } from './lib/rut'
+import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
 
 interface ModalEditarTurnoProps {
   cuadrilla: CuadrillaTurno
@@ -32,8 +33,13 @@ export const ModalEditarTurno = ({ cuadrilla, onCerrar, onGuardado }: ModalEdita
   const [nuevoApellido, setNuevoApellido] = useState('')
   const [nuevoRut, setNuevoRut] = useState('')
   const [nuevoCargo, setNuevoCargo] = useState('')
+  const [mostrarPegado, setMostrarPegado] = useState(false)
+  const [textoMasivo, setTextoMasivo] = useState('')
+  const [agregandoMasivo, setAgregandoMasivo] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const { validos: masivoValidos, errores: masivoErrores } = parsearTrabajadoresMasivo(textoMasivo)
 
   const elegirPreset = (preset: PatronTurno) => {
     setPresetId(preset.id)
@@ -72,6 +78,24 @@ export const ModalEditarTurno = ({ cuadrilla, onCerrar, onGuardado }: ModalEdita
       setNuevoNombre(''); setNuevoApellido(''); setNuevoRut(''); setNuevoCargo('')
     } catch (err) {
       setError(traducirError(err, 'No se pudo agregar el funcionario'))
+    }
+  }
+
+  const agregarDesdePegado = async () => {
+    if (masivoValidos.length === 0 || masivoErrores.length > 0) return
+    setError(null)
+    setAgregandoMasivo(true)
+    try {
+      const nuevos = await db.agregarTrabajadoresCuadrilla(
+        masivoValidos.map((t) => ({ cuadrilla_id: cuadrilla.id, ...t }))
+      )
+      setTrabajadores((prev) => [...prev, ...(nuevos as any[])])
+      setTextoMasivo('')
+      setMostrarPegado(false)
+    } catch (err) {
+      setError(traducirError(err, 'No se pudieron agregar los funcionarios'))
+    } finally {
+      setAgregandoMasivo(false)
     }
   }
 
@@ -190,7 +214,45 @@ export const ModalEditarTurno = ({ cuadrilla, onCerrar, onGuardado }: ModalEdita
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Funcionarios</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Funcionarios</label>
+                <button
+                  type="button"
+                  onClick={() => setMostrarPegado((v) => !v)}
+                  className={`text-xs px-2 py-1 rounded-lg transition-colors ${mostrarPegado ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+                >
+                  ⚡ Pegar lista
+                </button>
+              </div>
+
+              {mostrarPegado && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mt-2 space-y-2">
+                  <textarea
+                    value={textoMasivo}
+                    onChange={(e) => setTextoMasivo(e.target.value)}
+                    rows={5}
+                    placeholder={'Pega desde Excel, una persona por línea — Nombre completo, RUT, Cargo:\n\nJuan Pérez González\t12.345.678-9\tCapataz'}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs font-mono focus:outline-none focus:border-blue-600"
+                  />
+                  {textoMasivo.trim() && masivoErrores.length > 0 && (
+                    <div className="text-xs bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 space-y-0.5">
+                      {masivoErrores.map((e) => (
+                        <p key={e.linea} className="text-red-700">Línea {e.linea}: {e.mensaje}</p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={agregarDesdePegado}
+                      disabled={agregandoMasivo || masivoValidos.length === 0 || masivoErrores.length > 0}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                    >
+                      {agregandoMasivo ? 'Agregando…' : masivoValidos.length > 0 ? `Agregar ${masivoValidos.length}` : 'Agregar'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {trabajadores.length === 0 && <p className="text-xs text-slate-400 mt-1">Este turno no tiene funcionarios asignados.</p>}
 

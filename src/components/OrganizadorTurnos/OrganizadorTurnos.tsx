@@ -561,9 +561,9 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           cuadrillas={cuadrillas}
           cuadrillaIdInicial={cuadrillaFuncionarioId ?? undefined}
           onCerrar={() => setCuadrillaFuncionarioId(undefined)}
-          onAgregado={(cuadrillaId, trabajador) => {
+          onAgregados={(cuadrillaId, trabajadores) => {
             setCuadrillas((prev) =>
-              prev.map((c) => (c.id === cuadrillaId ? { ...c, trabajadores: [...c.trabajadores, trabajador] } : c))
+              prev.map((c) => (c.id === cuadrillaId ? { ...c, trabajadores: [...c.trabajadores, ...trabajadores] } : c))
             )
             setCuadrillaFuncionarioId(undefined)
           }}
