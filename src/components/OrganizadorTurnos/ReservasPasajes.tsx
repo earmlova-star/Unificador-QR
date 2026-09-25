@@ -195,19 +195,31 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     }
   }
 
-  // Encargado y Fecha de Reserva se editan una sola vez por día (en el
-  // encabezado del grupo de fecha), no por trabajador — pedido explícito
-  // 2026-09-24. Se aplican a TODAS las reservas de ese día (suben + bajan)
-  // en paralelo, reusando el mismo guardar() de cada fila.
-  const candidatosDeFecha = (fecha: string) => candidatos.filter((c) => c.fecha === fecha)
+  // Clave de agrupamiento de un candidato: su Fecha de Reserva si ya tiene
+  // una asignada, o su fecha de viaje (subida/bajada) mientras no la tenga
+  // — pedido explícito 2026-09-25: la pantalla se organiza por Fecha de
+  // Reserva (la de la "cinta" del encabezado), no por fecha de viaje. Ver
+  // porFecha más abajo.
+  const claveGrupoDe = (c: Candidato) => reservaDe(c)?.fecha_reserva ?? c.fecha
 
-  const valorGrupoFecha = (fecha: string, campo: 'encargado_reserva' | 'fecha_reserva'): string => {
-    const conValor = reservas.find((r) => r.fecha === fecha && r[campo])
+  // Encargado y Fecha de Reserva se editan una sola vez por grupo (en el
+  // encabezado), no por trabajador — pedido explícito 2026-09-24. Se
+  // aplican a TODOS los candidatos de ESE grupo (suben + bajan, sin
+  // importar su fecha de viaje real) en paralelo, reusando el mismo
+  // guardar() de cada fila. Cambiar la Fecha de Reserva del grupo los
+  // reagrupa solos en el siguiente render (porFecha se recalcula desde
+  // `reservas`), no hace falta moverlos a mano.
+  const candidatosDeGrupo = (claveGrupo: string) => candidatos.filter((c) => claveGrupoDe(c) === claveGrupo)
+
+  const valorGrupoFecha = (claveGrupo: string, campo: 'encargado_reserva' | 'fecha_reserva'): string => {
+    const conValor = candidatosDeGrupo(claveGrupo)
+      .map(reservaDe)
+      .find((r) => r && r[campo])
     return conValor?.[campo] ?? ''
   }
 
-  const guardarGrupoFecha = (fecha: string, cambios: Partial<Pick<ReservaPasaje, 'encargado_reserva' | 'fecha_reserva'>>) =>
-    Promise.all(candidatosDeFecha(fecha).map((c) => guardar(c, cambios)))
+  const guardarGrupoFecha = (claveGrupo: string, cambios: Partial<Pick<ReservaPasaje, 'encargado_reserva' | 'fecha_reserva'>>) =>
+    Promise.all(candidatosDeGrupo(claveGrupo).map((c) => guardar(c, cambios)))
 
   const alternarConfirmada = (c: Candidato) => {
     const confirmadaActual = reservaDe(c)?.confirmada ?? false
@@ -219,19 +231,28 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     })
   }
 
-  // Agrupa por fecha, y dentro de cada fecha por tipo (mismo orden que la
+  // Agrupa por Fecha de Reserva (con fallback a la fecha de viaje — ver
+  // claveGrupoDe), y dentro de cada grupo por tipo (mismo orden que la
   // planilla de referencia: subida y bajada como sub-bloques separados).
+  // Como la clave depende de `reservas` (de ahí sale la Fecha de Reserva
+  // ya guardada de cada candidato), hay que recalcular también cuando
+  // cambia, no solo cuando cambian los candidatos.
   const porFecha = useMemo(() => {
     const mapa = new Map<string, { subida: Candidato[]; bajada: Candidato[] }>()
     for (const c of candidatos) {
-      if (!mapa.has(c.fecha)) mapa.set(c.fecha, { subida: [], bajada: [] })
-      mapa.get(c.fecha)![c.tipo].push(c)
+      const claveGrupo = claveGrupoDe(c)
+      if (!mapa.has(claveGrupo)) mapa.set(claveGrupo, { subida: [], bajada: [] })
+      mapa.get(claveGrupo)![c.tipo].push(c)
     }
     return [...mapa.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [candidatos])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidatos, reservas])
 
   const formatearFecha = (fechaISO: string) =>
     new Date(`${fechaISO}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()
+
+  const formatearFechaCorta = (fechaISO: string) =>
+    new Date(`${fechaISO}T00:00:00`).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
 
   const renderGrupo = (c: Candidato) => {
     const reserva = reservaDe(c)
@@ -241,6 +262,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         <td className="px-3 py-1.5 text-slate-800 whitespace-nowrap">{c.trabajador.nombre} {c.trabajador.apellido}</td>
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.trabajador.rut}</td>
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.cuadrillaNombre}</td>
+        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap" title={`Fecha de viaje: ${c.fecha}`}>{formatearFechaCorta(c.fecha)}</td>
         <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{reserva?.origen ?? origen} → {reserva?.destino ?? destino}</td>
         <td className="px-3 py-1.5">
           <input
@@ -273,6 +295,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         <th className="text-left font-semibold px-3 pb-1">Trabajador</th>
         <th className="text-left font-semibold px-3 pb-1">RUT</th>
         <th className="text-left font-semibold px-3 pb-1">Turno</th>
+        <th className="text-left font-semibold px-3 pb-1">Viaje</th>
         <th className="text-left font-semibold px-3 pb-1">Origen → Destino</th>
         <th className="text-left font-semibold px-3 pb-1">Horario</th>
         <th className="text-left font-semibold px-3 pb-1">Observaciones</th>
@@ -319,31 +342,31 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         </div>
       ) : (
         <div className="px-4 sm:px-6 py-4 space-y-6 overflow-x-auto">
-          {porFecha.map(([fecha, grupos]) => (
-            <div key={fecha} className="border border-slate-200 rounded-lg overflow-hidden">
+          {porFecha.map(([claveGrupo, grupos]) => (
+            <div key={claveGrupo} className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="bg-slate-100 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-                <p className="text-xs font-bold text-slate-700">{formatearFecha(fecha)}</p>
+                <p className="text-xs font-bold text-slate-700">{formatearFecha(claveGrupo)}</p>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] font-semibold text-slate-500 uppercase">Encargado</label>
                   <input
                     type="text"
-                    defaultValue={valorGrupoFecha(fecha, 'encargado_reserva')}
+                    defaultValue={valorGrupoFecha(claveGrupo, 'encargado_reserva')}
                     placeholder="—"
                     onBlur={(e) => {
-                      if (e.target.value !== valorGrupoFecha(fecha, 'encargado_reserva'))
-                        guardarGrupoFecha(fecha, { encargado_reserva: e.target.value || null })
+                      if (e.target.value !== valorGrupoFecha(claveGrupo, 'encargado_reserva'))
+                        guardarGrupoFecha(claveGrupo, { encargado_reserva: e.target.value || null })
                     }}
                     className="w-40 px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
                   />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <label className="text-[10px] font-semibold text-slate-500 uppercase">Fecha de reserva</label>
+                  <label className="text-[10px] font-semibold text-slate-500 uppercase" title="Cambiarla mueve a todo este grupo junto a la fecha nueva">Fecha de reserva</label>
                   <input
                     type="date"
-                    defaultValue={valorGrupoFecha(fecha, 'fecha_reserva')}
+                    defaultValue={valorGrupoFecha(claveGrupo, 'fecha_reserva')}
                     onBlur={(e) => {
-                      if (e.target.value !== valorGrupoFecha(fecha, 'fecha_reserva'))
-                        guardarGrupoFecha(fecha, { fecha_reserva: e.target.value || null })
+                      if (e.target.value !== valorGrupoFecha(claveGrupo, 'fecha_reserva'))
+                        guardarGrupoFecha(claveGrupo, { fecha_reserva: e.target.value || null })
                     }}
                     className="px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
                   />
