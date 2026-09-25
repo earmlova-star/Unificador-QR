@@ -514,7 +514,12 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         return (act.cantidad ?? 0) * cantidadEnActividad
       })
     }
-    return fila.horas.slice(0, numActividades)
+    // Igual que Array.from({length:numActividades}) — SIEMPRE numActividades
+    // celdas, sin importar cuánto mida fila.horas todavía. `.slice()` sobre
+    // un array más corto (p. ej. [] en un equipo recién creado) devolvía
+    // MENOS celdas que columnas de encabezado: en un equipo nuevo (horas=[])
+    // no salía NINGÚN input para tipear, sin ningún error visible.
+    return Array.from({ length: numActividades }, (_, i) => fila.horas[i] ?? 0)
   }
 
   // ---------- Grupos de Maquinaria ----------
