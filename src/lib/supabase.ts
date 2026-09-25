@@ -877,6 +877,8 @@ export const db = {
       patron_incluye_subida: boolean
       fecha_inicio: string
       color_tema: string
+      config_subida_id: string | null
+      config_bajada_id: string | null
     }>
   ) {
     const { data, error } = await supabase
@@ -987,6 +989,34 @@ export const db = {
     const { data, error } = await supabase.from('eventos_transito_trabajadores').insert(trabajadores).select()
     if (error) throw error
     return data
+  },
+
+  // ---------- Configuraciones de Viaje (presets de Origen/Destino/Hora) ----------
+  // Ver add_configuraciones_viaje.sql. Reusables y asignables a un turno
+  // (cuadrillas_turno.config_subida_id / config_bajada_id) — mismo acceso
+  // RLS que cuadrillas_turno.
+  async obtenerConfiguracionesViaje() {
+    const { data, error } = await supabase
+      .from('configuraciones_viaje')
+      .select('*')
+      .order('tipo', { ascending: true })
+      .order('hora', { ascending: true })
+
+    if (error) throw error
+    return data
+  },
+
+  async crearConfiguracionViaje(config: { tipo: 'subida' | 'bajada'; origen: string; destino: string; hora: string; creado_por: string }) {
+    const { data, error } = await supabase.from('configuraciones_viaje').insert([config]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  async eliminarConfiguracionViaje(id: string) {
+    // Los turnos que la tenían asignada la pierden solos (FK "on delete
+    // set null"), no hace falta desasignarla a mano antes de borrar.
+    const { error } = await supabase.from('configuraciones_viaje').delete().eq('id', id)
+    if (error) throw error
   },
 
   // ---------- Reservas de Pasajes ----------

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { CuadrillaTurno, EventoTransito, Usuario } from '@/types/index'
+import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
 import { PRESETS_TURNO, PatronTurno } from './lib/presetsTurno'
 import { CALENDARIO_INICIO, TAMANO_VENTANA, enInicioDeRango, enFinDeRango, limitarInicioVentana, sumarDias } from './lib/rangoFechas'
@@ -11,6 +11,7 @@ import { ModalEditarTurno } from './ModalEditarTurno'
 import { ModalAgregarFuncionario } from './ModalAgregarFuncionario'
 import { ModalAgregarEventoTransito } from './ModalAgregarEventoTransito'
 import { ModalAgregarFuncionarioEvento } from './ModalAgregarFuncionarioEvento'
+import { ModalConfiguracionesViaje } from './ModalConfiguracionesViaje'
 import { ReservasPasajes } from './ReservasPasajes'
 
 interface OrganizadorTurnosProps {
@@ -29,6 +30,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [vista, setVista] = useState<Vista>('gantt')
   const [cuadrillas, setCuadrillas] = useState<CuadrillaTurno[]>([])
   const [eventosTransito, setEventosTransito] = useState<EventoTransito[]>([])
+  const [configuraciones, setConfiguraciones] = useState<ConfiguracionViaje[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -43,6 +45,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   // para un evento ya creado.
   const [modalEvento, setModalEvento] = useState<'subida' | 'bajada' | undefined>(undefined)
   const [eventoFuncionarioId, setEventoFuncionarioId] = useState<string | undefined>(undefined)
+  const [modalConfiguraciones, setModalConfiguraciones] = useState(false)
 
   const [arrastrandoId, setArrastrandoId] = useState<string | null>(null)
   const [sobreId, setSobreId] = useState<string | null>(null)
@@ -123,6 +126,13 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       setEventosTransito(datosEventos as EventoTransito[])
     } catch (err) {
       mensajeError = mensajeError ?? traducirError(err, 'No se pudieron cargar las subidas/bajadas sueltas')
+    }
+
+    try {
+      const datosConfiguraciones = await db.obtenerConfiguracionesViaje()
+      setConfiguraciones(datosConfiguraciones as ConfiguracionViaje[])
+    } catch (err) {
+      mensajeError = mensajeError ?? traducirError(err, 'No se pudieron cargar las configuraciones de viaje')
     }
 
     setError(mensajeError)
@@ -285,6 +295,14 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               className="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors"
             >
               + ▼ Bajada
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalConfiguraciones(true)}
+              title="Crear y administrar configuraciones de Origen/Destino/Hora reusables, para asignar a los turnos"
+              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+            >
+              ⚙ Configuraciones
             </button>
             <button
               type="button"
@@ -725,6 +743,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         <ReservasPasajes
           cuadrillas={cuadrillas}
           eventosTransito={eventosTransito}
+          configuraciones={configuraciones}
           inicioVentanaFecha={inicioVentanaFecha}
           diasVentana={TAMANO_VENTANA}
           usuario={usuario}
@@ -758,11 +777,24 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       {cuadrillaEditando && (
         <ModalEditarTurno
           cuadrilla={cuadrillaEditando}
+          configuraciones={configuraciones}
           onCerrar={() => setCuadrillaEditando(null)}
           onGuardado={(actualizada) => {
             setCuadrillas((prev) => prev.map((c) => (c.id === actualizada.id ? actualizada : c)))
             setCuadrillaEditando(null)
           }}
+        />
+      )}
+
+      {modalConfiguraciones && (
+        <ModalConfiguracionesViaje
+          configuraciones={configuraciones}
+          usuario={usuario}
+          onCerrar={() => setModalConfiguraciones(false)}
+          onCreada={(config) => setConfiguraciones((prev) => [...prev, config])}
+          onEliminada={(id) =>
+            setConfiguraciones((prev) => prev.filter((c) => c.id !== id))
+          }
         />
       )}
 

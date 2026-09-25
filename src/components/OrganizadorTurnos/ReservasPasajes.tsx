@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
+import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
 import { UBICACION_TERMINAL, UBICACION_FAENA, origenDestino } from './lib/ubicaciones'
 
 interface ReservasPasajesProps {
   cuadrillas: CuadrillaTurno[]
   eventosTransito: EventoTransito[]
+  configuraciones: ConfiguracionViaje[]
   inicioVentanaFecha: Date
   diasVentana: number
   usuario: Usuario
@@ -30,6 +31,11 @@ interface Candidato {
   cuadrillaNombre: string
   fecha: string
   tipo: 'subida' | 'bajada'
+  // ConfiguracionViaje asignada al turno para esta dirección (ver
+  // CuadrillaTurno.config_subida_id/config_bajada_id) — null si el turno
+  // no tiene ninguna asignada, o si el candidato no viene de un turno
+  // (Subida/Bajada suelta). Pedido explícito 2026-09-25.
+  configuracionId: string | null
 }
 
 function claveCandidato(trabajadorId: string, fecha: string, tipo: 'subida' | 'bajada') {
@@ -38,11 +44,13 @@ function claveCandidato(trabajadorId: string, fecha: string, tipo: 'subida' | 'b
 
 // Candidatos = quién sube/baja y cuándo. La mayoría sale del motor de
 // turnos (no se guarda en la base) — cada trabajador de una cuadrilla
-// comparte la misma fecha de subida/bajada que su cuadrilla. A eso se
-// suman las Subidas/Bajadas sueltas (EventoTransito, pedido explícito
+// comparte la misma fecha de subida/bajada que su cuadrilla, y la misma
+// ConfiguracionViaje asignada a su turno (si tiene una). A eso se suman
+// las Subidas/Bajadas sueltas (EventoTransito, pedido explícito
 // 2026-09-24): un día fijo, independiente de cualquier cuadrilla, con su
 // propia lista de trabajadores — filtradas a la ventana visible igual que
-// hace el motor de turnos con las suyas.
+// hace el motor de turnos con las suyas. Estas no tienen configuración
+// propia (no pertenecen a ningún turno).
 function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: EventoTransito[], inicioVentana: Date, dias: number): Candidato[] {
   const candidatos: Candidato[] = []
   for (const cuadrilla of cuadrillas) {
@@ -51,6 +59,7 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
     for (const seg of segmentos) {
       if (seg.tipo !== 'SUBIDA' && seg.tipo !== 'BAJADA') continue
       const tipo: 'subida' | 'bajada' = seg.tipo === 'SUBIDA' ? 'subida' : 'bajada'
+      const configuracionId = (tipo === 'subida' ? cuadrilla.config_subida_id : cuadrilla.config_bajada_id) ?? null
       for (const trabajador of cuadrilla.trabajadores) {
         candidatos.push({
           clave: claveCandidato(trabajador.id, seg.fecha, tipo),
@@ -58,6 +67,7 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
           cuadrillaNombre: cuadrilla.nombre,
           fecha: seg.fecha,
           tipo,
+          configuracionId,
         })
       }
     }
@@ -77,6 +87,7 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
         cuadrillaNombre: evento.tipo === 'subida' ? 'Subida suelta' : 'Bajada suelta',
         fecha: evento.fecha,
         tipo: evento.tipo,
+        configuracionId: null,
       })
     }
   }
@@ -84,7 +95,24 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
   return candidatos
 }
 
-export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFecha, diasVentana, usuario }: ReservasPasajesProps) => {
+// Resuelve el viaje efectivo de un candidato: si tiene una
+// ConfiguracionViaje asignada (por su turno), usa su Origen/Destino/Hora;
+// si no, cae al Origen/Destino genérico de siempre (Terminal ↔ Faena),
+// sin hora sugerida.
+function resolverViaje(
+  tipo: 'subida' | 'bajada',
+  configuracionId: string | null,
+  configuraciones: ConfiguracionViaje[],
+  terminal: string,
+  faena: string
+): { origen: string; destino: string; horaSugerida: string | null } {
+  const config = configuracionId ? configuraciones.find((c) => c.id === configuracionId) : undefined
+  if (config) return { origen: config.origen, destino: config.destino, horaSugerida: config.hora }
+  const { origen, destino } = origenDestino(tipo, terminal, faena)
+  return { origen, destino, horaSugerida: null }
+}
+
+export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, inicioVentanaFecha, diasVentana, usuario }: ReservasPasajesProps) => {
   const [reservas, setReservas] = useState<ReservaPasaje[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,13 +158,11 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFech
     >
   ) => {
     const existente = reservaDe(c)
-    // El horario "en vivo" de este guardado (si es lo que se está editando
-    // ahora mismo) manda sobre el ya guardado, para que origen/destino
-    // salgan bien la primera vez que se guarda la reserva — ver
-    // origenDestino en lib/ubicaciones.ts (la subida de las 17:00 llega al
-    // hotel, no a la faena).
-    const horarioEfectivo = cambios.horario !== undefined ? cambios.horario : existente?.horario
-    const { origen, destino } = origenDestino(c.tipo, terminal, faena, horarioEfectivo)
+    // Si el turno de este candidato tiene una ConfiguracionViaje asignada
+    // para esta dirección, su Origen/Destino/Hora son el default al
+    // guardar la reserva por primera vez (ver resolverViaje) — si no,
+    // cae al Origen/Destino genérico de siempre.
+    const { origen, destino, horaSugerida } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
     setError(null)
     try {
       const guardada = await db.guardarReservaPasaje({
@@ -145,7 +171,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFech
         tipo: c.tipo,
         origen: existente?.origen ?? origen,
         destino: existente?.destino ?? destino,
-        horario: existente?.horario ?? null,
+        horario: existente?.horario ?? horaSugerida ?? null,
         confirmada: existente?.confirmada ?? false,
         confirmada_por: existente?.confirmada_por ?? null,
         confirmada_en: existente?.confirmada_en ?? null,
@@ -207,7 +233,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFech
 
   const renderGrupo = (c: Candidato) => {
     const reserva = reservaDe(c)
-    const { origen, destino } = origenDestino(c.tipo, terminal, faena, reserva?.horario)
+    const { origen, destino, horaSugerida } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
     return (
       <tr key={c.clave} className={reserva?.confirmada ? 'bg-green-50/40' : ''}>
         <td className="px-3 py-1.5 text-slate-800 whitespace-nowrap">{c.trabajador.nombre} {c.trabajador.apellido}</td>
@@ -217,7 +243,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFech
         <td className="px-3 py-1.5">
           <input
             type="text"
-            defaultValue={reserva?.horario ?? ''}
+            defaultValue={reserva?.horario ?? horaSugerida ?? ''}
             placeholder="17:00"
             onBlur={(e) => { if (e.target.value !== (reserva?.horario ?? '')) guardar(c, { horario: e.target.value || null }) }}
             className="w-20 px-2 py-1 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600"

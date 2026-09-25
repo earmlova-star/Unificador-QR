@@ -390,11 +390,39 @@ export interface CuadrillaTurno {
   color_tema: string;
   orden: number;
 
+  // Configuración de viaje (ver ConfiguracionViaje) asignada manualmente a
+  // este turno para su subida y su bajada — pedido explícito 2026-09-25.
+  // Si no hay ninguna asignada, Reservas de Pasajes sigue usando el
+  // Origen/Destino genérico (Terminal ↔ Faena) de siempre.
+  config_subida_id?: string | null;
+  config_bajada_id?: string | null;
+
   creado_por: string;
   created_at: string;
   updated_at: string;
 
   trabajadores: TrabajadorCuadrilla[];
+}
+
+// Preset reusable de Origen/Destino/Hora para Reservas de Pasajes — pedido
+// explícito 2026-09-25: antes el Origen/Destino salía siempre de los
+// campos genéricos Terminal/Faena de la pantalla; ahora un turno puede
+// tener una configuración propia asignada (una para su subida, otra para
+// su bajada, ver CuadrillaTurno.config_subida_id/config_bajada_id) que la
+// reemplaza — por ejemplo, una subida de las 17:00 que en vez de llegar a
+// la faena llega a un hotel. Independiente de cualquier turno: se crea y
+// se administra aparte (ver ModalConfiguracionesViaje.tsx), y luego se
+// asigna a los turnos que corresponda.
+export interface ConfiguracionViaje {
+  id: string;
+  tipo: 'subida' | 'bajada';
+  origen: string;
+  destino: string;
+  hora: string; // HH:mm
+
+  creado_por: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // Subida o Bajada suelta, de un solo día — pedido explícito 2026-09-24:

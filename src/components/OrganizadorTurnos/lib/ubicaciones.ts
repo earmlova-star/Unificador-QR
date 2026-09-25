@@ -1,19 +1,14 @@
-// Origen/Destino fijos para Reservas de Pasajes — pedido explícito: un
-// solo par para toda la operación, no configurable por cuadrilla. Subida
-// va de Terminal a Faena; Bajada es el viaje inverso.
+// Origen/Destino genéricos para Reservas de Pasajes — se usan cuando el
+// turno de la reserva no tiene una ConfiguracionViaje propia asignada
+// (ver config_subida_id/config_bajada_id en CuadrillaTurno). Subida va de
+// Terminal a Faena; Bajada es el viaje inverso.
+//
+// Hasta el 2026-09-25 esta función tenía además una regla fija (subida
+// 17:00 → hotel); se sacó de acá porque pasó a ser una ConfiguracionViaje
+// más, asignable por turno — ver ModalConfiguracionesViaje.tsx.
 export const UBICACION_TERMINAL = 'Terminal Borja'
 export const UBICACION_FAENA = 'Pérez Caldera'
 
-// La subida de las 17:00 no llega directo a la faena, sino al hotel donde
-// duermen esa noche — pedido explícito 2026-09-25. La de las 05:30 (y
-// cualquier otro horario, incluido "todavía sin horario") sigue yendo
-// directo a la faena, igual que antes. Bajada no cambia: siempre
-// Faena → Terminal.
-const HORARIO_SUBIDA_A_HOTEL = '17:00'
-const NOMBRE_HOTEL = 'Hotel Plaza'
-
-export function origenDestino(tipo: 'subida' | 'bajada', terminal: string, faena: string, horario?: string | null) {
-  if (tipo === 'bajada') return { origen: faena, destino: terminal }
-  const destino = horario?.trim() === HORARIO_SUBIDA_A_HOTEL ? `${faena} - ${NOMBRE_HOTEL}` : faena
-  return { origen: terminal, destino }
+export function origenDestino(tipo: 'subida' | 'bajada', terminal: string, faena: string) {
+  return tipo === 'subida' ? { origen: terminal, destino: faena } : { origen: faena, destino: terminal }
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { CuadrillaTurno } from '@/types/index'
+import { ConfiguracionViaje, CuadrillaTurno } from '@/types/index'
 import { PRESETS_TURNO, PatronTurno } from './lib/presetsTurno'
 import { TEMAS_COLOR } from './lib/coloresTurno'
 import { CALENDARIO_INICIO, CALENDARIO_FIN } from './lib/rangoFechas'
@@ -11,6 +11,7 @@ import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
 
 interface ModalEditarTurnoProps {
   cuadrilla: CuadrillaTurno
+  configuraciones: ConfiguracionViaje[]
   onCerrar: () => void
   onGuardado: (cuadrilla: CuadrillaTurno) => void
 }
@@ -20,7 +21,7 @@ function coincideConPreset(dt: number, dd: number): string {
   return match ? match.id : 'custom'
 }
 
-export const ModalEditarTurno = ({ cuadrilla, onCerrar, onGuardado }: ModalEditarTurnoProps) => {
+export const ModalEditarTurno = ({ cuadrilla, configuraciones, onCerrar, onGuardado }: ModalEditarTurnoProps) => {
   const [nombre, setNombre] = useState(cuadrilla.nombre)
   const [presetId, setPresetId] = useState(coincideConPreset(cuadrilla.patron_dias_trabajo, cuadrilla.patron_dias_descanso))
   const [diasTrabajo, setDiasTrabajo] = useState(cuadrilla.patron_dias_trabajo)
@@ -28,6 +29,8 @@ export const ModalEditarTurno = ({ cuadrilla, onCerrar, onGuardado }: ModalEdita
   const [incluyeSubida, setIncluyeSubida] = useState(cuadrilla.patron_incluye_subida)
   const [fechaInicio, setFechaInicio] = useState(cuadrilla.fecha_inicio)
   const [colorTemaId, setColorTemaId] = useState(cuadrilla.color_tema)
+  const [configSubidaId, setConfigSubidaId] = useState(cuadrilla.config_subida_id ?? '')
+  const [configBajadaId, setConfigBajadaId] = useState(cuadrilla.config_bajada_id ?? '')
   const [trabajadores, setTrabajadores] = useState(cuadrilla.trabajadores)
   const [nuevoNombre, setNuevoNombre] = useState('')
   const [nuevoApellido, setNuevoApellido] = useState('')
@@ -129,6 +132,8 @@ export const ModalEditarTurno = ({ cuadrilla, onCerrar, onGuardado }: ModalEdita
         patron_incluye_subida: incluyeSubida,
         fecha_inicio: fechaInicio,
         color_tema: colorTemaId,
+        config_subida_id: configSubidaId || null,
+        config_bajada_id: configBajadaId || null,
       })
 
       onGuardado({ ...actualizada, trabajadores } as CuadrillaTurno)
@@ -196,6 +201,49 @@ export const ModalEditarTurno = ({ cuadrilla, onCerrar, onGuardado }: ModalEdita
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Fecha de inicio</label>
               <input type="date" min={CALENDARIO_INICIO} max={CALENDARIO_FIN} value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Configuración de viaje (Reservas de Pasajes)</label>
+              <p className="text-[11px] text-slate-400 mb-2">
+                Si no asignas ninguna, la subida/bajada de este turno sigue usando el Origen/Destino genérico.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">▲ Subida</label>
+                  <select
+                    value={configSubidaId}
+                    onChange={(e) => setConfigSubidaId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                  >
+                    <option value="">Sin asignar</option>
+                    {configuraciones
+                      .filter((c) => c.tipo === 'subida')
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.hora} — {c.origen} → {c.destino}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">▼ Bajada</label>
+                  <select
+                    value={configBajadaId}
+                    onChange={(e) => setConfigBajadaId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                  >
+                    <option value="">Sin asignar</option>
+                    {configuraciones
+                      .filter((c) => c.tipo === 'bajada')
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.hora} — {c.origen} → {c.destino}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div>
