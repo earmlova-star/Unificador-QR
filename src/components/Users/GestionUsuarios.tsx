@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Usuario, UserRole } from '@/types/index'
+import { Usuario, UserRole, UserStatus } from '@/types/index'
 import { db } from '@lib/supabase'
 import { formatearCargo } from '@lib/formato'
 import { traducirError } from '@lib/errores'
@@ -16,7 +16,18 @@ interface VincularFormData {
   rol: UserRole
 }
 
-const ROLES: UserRole[] = [UserRole.COORDINADOR, UserRole.APR, UserRole.SUPERVISOR, UserRole.CONSULTOR]
+// Faltaba MANDANTE — es un rol real y activo (ve/comenta Partes Diarios
+// enviados, no ve Documentos, ver Inicio.tsx/ParteDiarioDetalle.tsx), no uno
+// vestigial. Sin esto en la lista, el <select> de un usuario Mandante no
+// tenía ninguna <option> que calzara con su rol real: tocarlo sin querer
+// podía degradarlo silenciosamente a Coordinador (QA 2026-09-15, hallazgo #9).
+const ROLES: UserRole[] = [
+  UserRole.COORDINADOR,
+  UserRole.APR,
+  UserRole.SUPERVISOR,
+  UserRole.CONSULTOR,
+  UserRole.MANDANTE,
+]
 
 export const GestionUsuarios = ({ usuario }: GestionUsuariosProps) => {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
@@ -60,6 +71,24 @@ export const GestionUsuarios = ({ usuario }: GestionUsuariosProps) => {
       setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, rol: nuevoRol } : u)))
     } catch (err) {
       const msg = traducirError(err, 'No se pudo actualizar el rol')
+      setError(msg)
+    } finally {
+      setActualizandoId(null)
+    }
+  }
+
+  // Hallazgo QA 2026-09-25: usuario_rol_actual() devuelve NULL (bloqueo
+  // silencioso de TODA la app) para cualquier usuario con estado distinto
+  // de 'activo', y hasta ahora no había ninguna forma de reactivarlo desde
+  // acá — solo corriendo SQL a mano.
+  const handleCambiarEstado = async (id: string, nuevoEstado: UserStatus) => {
+    setActualizandoId(id)
+    setError(null)
+    try {
+      await db.actualizarEstadoUsuario(id, nuevoEstado)
+      setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, estado: nuevoEstado } : u)))
+    } catch (err) {
+      const msg = traducirError(err, 'No se pudo actualizar el estado')
       setError(msg)
     } finally {
       setActualizandoId(null)
@@ -170,7 +199,10 @@ export const GestionUsuarios = ({ usuario }: GestionUsuariosProps) => {
 
       <div className="bg-white rounded-lg border border-slate-200 p-6">
         <h2 className="text-xl font-bold text-slate-900 mb-1">Usuarios</h2>
-        <p className="text-sm text-slate-500 mb-4">Cambia el rol de cualquier persona vinculada.</p>
+        <p className="text-sm text-slate-500 mb-4">
+          Cambia el rol de cualquier persona vinculada, o su estado — un usuario Inactivo pierde el acceso a
+          toda la app basado en su rol, no solo a un módulo.
+        </p>
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 mb-4">{error}</div>
@@ -187,7 +219,8 @@ export const GestionUsuarios = ({ usuario }: GestionUsuariosProps) => {
                 <tr className="bg-slate-800 text-white">
                   <th className="text-left px-4 py-2 rounded-l-lg">Nombre</th>
                   <th className="text-left px-4 py-2">Correo</th>
-                  <th className="text-left px-4 py-2 rounded-r-lg">Rol</th>
+                  <th className="text-left px-4 py-2">Rol</th>
+                  <th className="text-left px-4 py-2 rounded-r-lg">Estado</th>
                 </tr>
               </thead>
               <tbody>
@@ -211,6 +244,32 @@ export const GestionUsuarios = ({ usuario }: GestionUsuariosProps) => {
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCambiarEstado(
+                              u.id,
+                              u.estado === UserStatus.ACTIVO ? UserStatus.INACTIVO : UserStatus.ACTIVO
+                            )
+                          }
+                          disabled={esUnoMismo || actualizandoId === u.id}
+                          title={
+                            esUnoMismo
+                              ? 'No puedes desactivarte a ti mismo desde acá'
+                              : u.estado === UserStatus.ACTIVO
+                              ? 'Desactivar: pierde acceso a todo lo que depende de su rol, en toda la app'
+                              : 'Reactivar: recupera el acceso normal según su rol'
+                          }
+                          className={`text-xs font-semibold px-2.5 py-1.5 rounded-full disabled:opacity-40 disabled:cursor-not-allowed ${
+                            u.estado === UserStatus.ACTIVO
+                              ? 'bg-green-100 text-green-800 hover:bg-red-100 hover:text-red-800'
+                              : 'bg-red-100 text-red-800 hover:bg-green-100 hover:text-green-800'
+                          }`}
+                        >
+                          {u.estado === UserStatus.ACTIVO ? 'Activo' : 'Inactivo'}
+                        </button>
                       </td>
                     </tr>
                   )

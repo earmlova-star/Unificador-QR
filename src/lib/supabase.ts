@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { UserRole, SolicitudCompra, Requisicion, OrdenCompra, GuiaDespacho, Faena } from '@/types/index'
+import { UserRole, UserStatus, SolicitudCompra, Requisicion, OrdenCompra, GuiaDespacho, Faena } from '@/types/index'
 import { acumularCadena, calcularHHReales } from './calculosHH'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -190,6 +190,26 @@ export const db = {
     const { data, error } = await supabase
       .from('usuarios')
       .update({ rol })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  // Hallazgo QA 2026-09-25: `usuario_rol_actual()` devuelve NULL para
+  // cualquier usuario con estado != 'activo', lo que bloquea en silencio
+  // TODAS las políticas basadas en rol de la app entera — no solo un
+  // módulo. Antes no había ninguna forma de reactivar un usuario desde la
+  // UI (había que correr SQL a mano, ver activar_jonathan_cayul.sql); esto
+  // le da a Gestión de Usuarios el mismo permiso que ya tenía para el rol
+  // (RLS "coordinador_actualizar_usuarios" ya permite tocar cualquier
+  // columna, incluida `estado` — no hace falta ninguna política nueva).
+  async actualizarEstadoUsuario(id: string, estado: UserStatus) {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .update({ estado })
       .eq('id', id)
       .select()
       .single()
@@ -1058,6 +1078,38 @@ export const db = {
     const { data, error } = await supabase
       .from('reservas_pasaje')
       .upsert([{ ...reserva, updated_at: new Date().toISOString() }], { onConflict: 'trabajador_id,fecha,tipo' })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  // Hallazgo QA 2026-09-25: para una reserva que YA existe, ReservasPasajes.tsx
+  // reenviaba la fila completa (reconstruida desde un snapshot local de
+  // `reservas`, mezclado con el cambio actual) vía guardarReservaPasaje —
+  // dos ediciones casi simultáneas a campos distintos de la misma reserva
+  // (una tipea el horario, otra confirma) cada una parte del mismo
+  // `existente` desactualizado, y la que termina de guardar último pisa el
+  // cambio de la otra. Un UPDATE con solo los campos que de verdad
+  // cambiaron no tiene ese problema — a diferencia de un upsert, no exige
+  // que el payload traiga todas las columnas NOT NULL de la tabla.
+  async actualizarReservaPasaje(
+    id: string,
+    cambios: Partial<{
+      horario: string | null
+      confirmada: boolean
+      confirmada_por: string | null
+      confirmada_en: string | null
+      encargado_reserva: string | null
+      fecha_reserva: string | null
+      observaciones: string | null
+    }>
+  ) {
+    const { data, error } = await supabase
+      .from('reservas_pasaje')
+      .update({ ...cambios, updated_at: new Date().toISOString() })
+      .eq('id', id)
       .select()
       .single()
 

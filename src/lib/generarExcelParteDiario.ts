@@ -628,24 +628,41 @@ export async function generarExcelParteDiario(parte: ParteDiario): Promise<Blob>
   CARGOS_DIRECTOS.forEach((cargo, i) => {
     const linea = parte.mano_obra_directa.find((f) => f.cargo === cargo)
     if (!linea) return
-    const fila = FILA_INICIO_DIRECTA + i
+    const fila = cfg.filaInicioDirecta + i
     hojaDR.getCell(`D${fila}`).value = linea.contratados
     hojaDR.getCell(`E${fila}`).value = linea.operativos
-    ;(linea.horas_por_actividad ?? []).forEach((horas, actIndex) => {
-      const col = COLUMNAS_HORAS[actIndex]
-      if (col) hojaDR.getCell(`${col}${fila}`).value = horas
-    })
+    // Plantilla ampliada (>7 actividades): estas celdas ya traen la
+    // fórmula "=E<fila>*$N$<fila_actividad>" (Operativos × Cantidad de
+    // esa actividad) — no se sobrescriben, o se pierde la fórmula y
+    // queda un número fijo igual al que la fórmula ya calcula sola.
+    //
+    // Hallazgo QA 2026-09-25: esa fórmula plana da un número DISTINTO al
+    // guardado/mostrado en la vista previa para un cargo con cuadrillas
+    // (pedido explícito 2026-09-24) — cada actividad ahí suma solo los
+    // operativos de las cuadrillas que participan en ella, no el total del
+    // cargo repartido por igual. Para esos cargos SÍ hay que escribir
+    // horas_por_actividad aunque la plantilla sea la ampliada, o el Excel
+    // queda divergiendo de lo que el coordinador acaba de aprobar en
+    // pantalla. Un cargo sin cuadrillas sigue con la fórmula intacta: ahí
+    // da exactamente lo mismo (Operativos × Cantidad es la cuenta real).
+    const tieneCuadrillas = Boolean(linea.cuadrillas && linea.cuadrillas.length > 0)
+    if (cfg.directaEscribeHoras || tieneCuadrillas) {
+      ;(linea.horas_por_actividad ?? []).forEach((horas, actIndex) => {
+        const col = cfg.columnasHoras[actIndex]
+        if (col) hojaDR.getCell(`${col}${fila}`).value = horas
+      })
+    }
   })
 
   EQUIPOS_MAQUINARIA.forEach((equipo, i) => {
     const linea = parte.maquinaria.find((f) => f.equipo === equipo)
     if (!linea) return
-    const fila = FILA_INICIO_MAQUINARIA + i
+    const fila = cfg.filaInicioMaquinaria + i
     hojaDR.getCell(`C${fila}`).value = linea.cantidad
     hojaDR.getCell(`D${fila}`).value = linea.mantencion
     hojaDR.getCell(`E${fila}`).value = linea.standby
     ;(linea.horas_por_actividad ?? []).forEach((horas, actIndex) => {
-      const col = COLUMNAS_HORAS[actIndex]
+      const col = cfg.columnasHoras[actIndex]
       if (col) hojaDR.getCell(`${col}${fila}`).value = horas
     })
   })

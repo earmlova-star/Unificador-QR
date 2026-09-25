@@ -322,6 +322,7 @@ export const DocumentList = ({ usuario, contrato }: DocumentListProps) => {
   // el próximo QR/PDF se regenere sin los documentos eliminados, y refresca la lista.
   const eliminarDocumentos = async (docs: Documento[], mensajeConfirmacion: string) => {
     if (docs.length === 0) return
+    if (!usuario) return
     if (!window.confirm(mensajeConfirmacion)) return
 
     setEliminando(true)
@@ -329,6 +330,17 @@ export const DocumentList = ({ usuario, contrato }: DocumentListProps) => {
 
     try {
       for (const doc of docs) {
+        // Hallazgo QA 2026-09-25: a diferencia de aprobarDocumento, borrar
+        // (incluso un documento ya APROBADO) no dejaba ningún rastro en el
+        // historial — se hace ANTES de eliminarDocumentoCompleto porque
+        // historial.documento_id referencia documentos.id: insertar
+        // después de borrar el documento violaría esa referencia.
+        await db.crearHistorial({
+          documento_id: doc.id,
+          usuario_id: usuario.id,
+          accion: 'eliminado',
+          detalle: `Documento "${doc.titulo}" eliminado por ${usuario.nombre}`,
+        })
         await db.eliminarDocumentoCompleto(doc)
       }
 

@@ -120,6 +120,22 @@ interface FilaMaquinariaConGrupos {
 }
 
 /**
+ * Saca la posición `index` de `arr`, tolerando que `arr` ya tenga huecos
+ * dispersos de verdad (no solo `undefined`/`false` en una posición
+ * ocupada) — puede pasar si un checkbox se marcó en un índice más allá
+ * del largo del array en ese momento (ver alternarEnIndice en
+ * ParteDiarioForm.tsx, que ahora lo evita, pero reportes ya guardados
+ * antes de ese fix pueden traer un array así). `Array.prototype.filter`
+ * NUNCA visita un hueco — lo saca solo, sin importar el índice — así que
+ * filtrar directo corre mal las posiciones. `[...arr]` primero rellena
+ * cada hueco con `undefined` (deja de ser un hueco), y recién ahí el
+ * `.filter()` por índice funciona como se espera.
+ */
+function quitarIndiceTolerante<T>(arr: T[], index: number): T[] {
+  return [...arr].filter((_, i) => i !== index)
+}
+
+/**
  * Quita la actividad en `index` y saca esa misma posición de cada array de
  * horas de maquinaria, de cada `actividades` de grupo de maquinaria (ver
  * GrupoMaquinaria en types/index.ts, pedido explícito 2026-09-25) y, si se
@@ -142,12 +158,12 @@ export function quitarActividad<
     actividades: actividades.filter((_, i) => i !== index),
     maquinaria: maquinaria.map((f) => ({
       ...f,
-      horas: f.horas.filter((_, i) => i !== index),
-      grupos: f.grupos?.map((g) => ({ ...g, actividades: g.actividades.filter((_, i) => i !== index) })),
+      horas: quitarIndiceTolerante(f.horas, index),
+      grupos: f.grupos?.map((g) => ({ ...g, actividades: quitarIndiceTolerante(g.actividades, index) })),
     })),
     manoObraDirecta: manoObraDirecta?.map((f) => ({
       ...f,
-      cuadrillas: f.cuadrillas?.map((c) => ({ ...c, actividades: c.actividades.filter((_, i) => i !== index) })),
+      cuadrillas: f.cuadrillas?.map((c) => ({ ...c, actividades: quitarIndiceTolerante(c.actividades, index) })),
     })),
   }
 }

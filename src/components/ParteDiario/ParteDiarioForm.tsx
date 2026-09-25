@@ -95,6 +95,21 @@ interface FilaMaquinaria {
 
 const sumar = (valores: number[]) => valores.reduce((acc, v) => acc + (v || 0), 0)
 
+// Invierte la posición actIndex de un array de participación por
+// actividad (cuadrilla o grupo de maquinaria), extendiéndolo con `false`
+// primero si hace falta. Hallazgo QA 2026-09-25: hacer `actividades[actIndex]
+// = !actividades[actIndex]` directo en un array más corto que actIndex deja
+// posiciones intermedias como huecos dispersos de verdad (no `false`) —
+// Array.prototype.filter() (usado al realinear en quitarActividad, ver
+// src/lib/actividades.ts) nunca visita un hueco, así que esas posiciones
+// se pierden en vez de correrse, corrompiendo el realineo de esa cuadrilla/
+// grupo la próxima vez que se borre una actividad anterior.
+function alternarEnIndice(actividades: boolean[], actIndex: number): boolean[] {
+  const siguiente = Array.from({ length: Math.max(actividades.length, actIndex + 1) }, (_, i) => actividades[i] ?? false)
+  siguiente[actIndex] = !siguiente[actIndex]
+  return siguiente
+}
+
 // Formulario completo de Daily Report — ver MAPEO_CAMPOS.md para el detalle
 // celda por celda del Excel que cada sección alimenta. Los cálculos
 // (Permiso-Descanso, HH/HM Total x Act., Operativos, totales, acumulados)
@@ -452,15 +467,9 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         i === index
           ? {
               ...f,
-              cuadrillas: f.cuadrillas?.map((c) => {
-                if (c.id !== cuadrillaId) return c
-                // Asignación directa por índice (no .map): una cuadrilla creada
-                // antes de agregar esta actividad tiene un array `actividades`
-                // más corto, y .map() no toca posiciones que no existen todavía.
-                const actividades = [...c.actividades]
-                actividades[actIndex] = !actividades[actIndex]
-                return { ...c, actividades }
-              }),
+              cuadrillas: f.cuadrillas?.map((c) =>
+                c.id === cuadrillaId ? { ...c, actividades: alternarEnIndice(c.actividades, actIndex) } : c
+              ),
             }
           : f
       )
@@ -561,15 +570,9 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         i === index
           ? {
               ...f,
-              grupos: f.grupos?.map((g) => {
-                if (g.id !== grupoId) return g
-                // Asignación directa por índice, no .map() — mismo motivo que
-                // alternarActividadCuadrilla: un grupo creado antes de agregar
-                // esta actividad tiene un array `actividades` más corto.
-                const actividades = [...g.actividades]
-                actividades[actIndex] = !actividades[actIndex]
-                return { ...g, actividades }
-              }),
+              grupos: f.grupos?.map((g) =>
+                g.id === grupoId ? { ...g, actividades: alternarEnIndice(g.actividades, actIndex) } : g
+              ),
             }
           : f
       )

@@ -172,29 +172,41 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     const { origen, destino, horaSugerida, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
     setError(null)
     try {
-      const guardada = await db.guardarReservaPasaje({
-        trabajador_id: c.trabajador.id,
-        fecha: c.fecha,
-        tipo: c.tipo,
-        origen: configResuelta ? origen : existente?.origen ?? origen,
-        destino: configResuelta ? destino : existente?.destino ?? destino,
-        horario: existente?.horario ?? horaSugerida ?? null,
-        confirmada: existente?.confirmada ?? false,
-        confirmada_por: existente?.confirmada_por ?? null,
-        confirmada_en: existente?.confirmada_en ?? null,
-        encargado_reserva: existente?.encargado_reserva ?? null,
-        fecha_reserva: existente?.fecha_reserva ?? null,
-        observaciones: existente?.observaciones ?? null,
-        creado_por: existente?.creado_por ?? usuario.id,
-        ...cambios,
-      })
-      setReservas((prev) => {
-        const idx = prev.findIndex((r) => r.id === guardada.id)
-        if (idx === -1) return [...prev, guardada as ReservaPasaje]
-        const copia = [...prev]
-        copia[idx] = guardada as ReservaPasaje
-        return copia
-      })
+      if (existente) {
+        // Hallazgo QA 2026-09-25: reenviar la fila completa reconstruida
+        // desde este snapshot local (como hacía antes, vía
+        // guardarReservaPasaje) hacía que dos ediciones casi simultáneas a
+        // campos DISTINTOS de la misma reserva (una tipea el horario,
+        // otra confirma) se pisaran entre sí — cada una partía del mismo
+        // `existente` desactualizado. Un UPDATE con solo lo que de verdad
+        // cambia en este guardado no tiene ese problema.
+        const guardada = await db.actualizarReservaPasaje(existente.id, {
+          ...(configResuelta ? { origen, destino } : {}),
+          ...cambios,
+        })
+        setReservas((prev) => prev.map((r) => (r.id === guardada.id ? (guardada as ReservaPasaje) : r)))
+      } else {
+        // Primera vez que se guarda algo de esta reserva: sí hace falta un
+        // INSERT con todas las columnas NOT NULL presentes (ver el
+        // comentario de guardarReservaPasaje).
+        const guardada = await db.guardarReservaPasaje({
+          trabajador_id: c.trabajador.id,
+          fecha: c.fecha,
+          tipo: c.tipo,
+          origen,
+          destino,
+          horario: horaSugerida ?? null,
+          confirmada: false,
+          confirmada_por: null,
+          confirmada_en: null,
+          encargado_reserva: null,
+          fecha_reserva: null,
+          observaciones: null,
+          creado_por: usuario.id,
+          ...cambios,
+        })
+        setReservas((prev) => [...prev, guardada as ReservaPasaje])
+      }
     } catch (err) {
       setError(traducirError(err, 'No se pudo guardar la reserva'))
     }
