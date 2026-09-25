@@ -99,18 +99,34 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
     }
   }, [menuContextual])
 
+  // Los dos fetch van en try/catch separados a propósito: con Promise.all,
+  // si uno de los dos fallaba (p. ej. eventos_transito recién creada,
+  // mientras el caché de PostgREST todavía no se entera de la tabla
+  // nueva) el catch se comía TODO, incluidos los turnos que sí habían
+  // cargado bien — la pantalla quedaba vacía como si se hubieran
+  // borrado, sin que la base perdiera un solo dato (incidente real
+  // 2026-09-24). Separados, un fallo en uno no pisa el resultado del otro.
   const cargar = async () => {
     setCargando(true)
     setError(null)
+    let mensajeError: string | null = null
+
     try {
-      const [datosCuadrillas, datosEventos] = await Promise.all([db.obtenerCuadrillasTurno(), db.obtenerEventosTransito()])
+      const datosCuadrillas = await db.obtenerCuadrillasTurno()
       setCuadrillas(datosCuadrillas as CuadrillaTurno[])
+    } catch (err) {
+      mensajeError = traducirError(err, 'No se pudieron cargar los turnos')
+    }
+
+    try {
+      const datosEventos = await db.obtenerEventosTransito()
       setEventosTransito(datosEventos as EventoTransito[])
     } catch (err) {
-      setError(traducirError(err, 'No se pudieron cargar los turnos'))
-    } finally {
-      setCargando(false)
+      mensajeError = mensajeError ?? traducirError(err, 'No se pudieron cargar las subidas/bajadas sueltas')
     }
+
+    setError(mensajeError)
+    setCargando(false)
   }
 
   useEffect(() => {
