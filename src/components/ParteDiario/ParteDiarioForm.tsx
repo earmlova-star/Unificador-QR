@@ -9,6 +9,7 @@ import {
   EQUIPOS_MAQUINARIA,
   Faena,
   FAENA_LABELS,
+  GrupoMaquinaria,
   HH_TURNO_POR_FAENA,
   ParteDiario,
   ParteDiarioEstado,
@@ -22,6 +23,7 @@ import { hhDeFila, hhTotales, permisoDescanso } from '@lib/calculosHH'
 import {
   actividadesValidas,
   horasDirectaPorActividad,
+  horasMaquinariaCalculadas,
   horasMaquinariaPorActividad,
   indicesActividadesValidas,
   realinearActividadesCuadrilla,
@@ -83,6 +85,12 @@ interface FilaMaquinaria {
   mantencion: number
   standby: number
   horas: number[]
+  // Desglose opcional por grupo (cantidad de equipos por actividad) — ver
+  // GrupoMaquinaria en types/index.ts. Si existe, las Act.N de este equipo
+  // dejan de tipearse a mano y pasan a calcularse solas (ver
+  // calcularHorasMaquinaria más abajo) — igual que cuadrillas en
+  // FilaManoObraDirecta.
+  grupos?: GrupoMaquinaria[]
 }
 
 const sumar = (valores: number[]) => valores.reduce((acc, v) => acc + (v || 0), 0)
@@ -159,9 +167,14 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         mantencion: existente?.mantencion ?? 0,
         standby: existente?.standby ?? 0,
         horas: existente?.horas_por_actividad ? [...existente.horas_por_actividad] : [],
+        grupos: existente?.grupos?.map((g) => ({ ...g, actividades: [...g.actividades] })),
       }
     })
   )
+  // Qué equipos de Maquinaria tienen su desglose de grupos desplegado —
+  // solo estado de UI, no se guarda (equipo es único dentro de
+  // EQUIPOS_MAQUINARIA así que sirve como key).
+  const [equiposExpandidos, setEquiposExpandidos] = useState<Set<string>>(new Set())
 
   const [jornada, setJornada] = useState(() => {
     const j = parteExistente?.jornada
@@ -480,10 +493,88 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     )
   }
 
+  // N° de Equipos "de verdad" de un equipo: si tiene grupos, es la suma de
+  // sus cantidades (el campo N° Equipos pasa a ser de solo lectura) —
+  // mismo mecanismo que operativosEfectivos con cuadrillas.
+  const cantidadEfectiva = (fila: FilaMaquinaria): number =>
+    fila.grupos && fila.grupos.length > 0 ? sumar(fila.grupos.map((g) => g.cantidad)) : fila.cantidad
+
+  // HM de un equipo en cada actividad = HH que dura la actividad × cantidad
+  // de equipos de ese grupo participando — mismo mecanismo (y mismo motivo
+  // para no reusar horasMaquinariaCalculadas acá: esa filtra actividades en
+  // blanco, pensada para guardar; en vivo hay que mostrar las numActividades
+  // columnas tal cual están en pantalla) que calcularHorasCargo con
+  // cuadrillas. Sin grupos, sigue el tipeo manual de siempre por celda.
+  const calcularHorasMaquinaria = (fila: FilaMaquinaria): number[] => {
+    const acts = actividades.slice(0, numActividades)
+    if (fila.grupos && fila.grupos.length > 0) {
+      const grupos = fila.grupos
+      return acts.map((act, i) => {
+        const cantidadEnActividad = sumar(grupos.map((g) => (g.actividades[i] ? g.cantidad : 0)))
+        return (act.cantidad ?? 0) * cantidadEnActividad
+      })
+    }
+    return fila.horas.slice(0, numActividades)
+  }
+
+  // ---------- Grupos de Maquinaria ----------
+  const alternarEquipoExpandido = (equipo: string) => {
+    setEquiposExpandidos((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(equipo)) siguiente.delete(equipo)
+      else siguiente.add(equipo)
+      return siguiente
+    })
+  }
+
+  const agregarGrupoMaquinaria = (index: number) => {
+    setEquiposExpandidos((prev) => new Set(prev).add(maquinaria[index].equipo))
+    setMaquinaria((prev) =>
+      prev.map((f, i) =>
+        i === index
+          ? { ...f, grupos: [...(f.grupos ?? []), { id: crypto.randomUUID(), cantidad: 0, actividades: Array(numActividades).fill(false) }] }
+          : f
+      )
+    )
+  }
+
+  const eliminarGrupoMaquinaria = (index: number, grupoId: string) => {
+    setMaquinaria((prev) => prev.map((f, i) => (i === index ? { ...f, grupos: f.grupos?.filter((g) => g.id !== grupoId) } : f)))
+  }
+
+  const actualizarGrupoMaquinaria = (index: number, grupoId: string, valor: string) => {
+    setMaquinaria((prev) =>
+      prev.map((f, i) =>
+        i === index ? { ...f, grupos: f.grupos?.map((g) => (g.id === grupoId ? { ...g, cantidad: Number(valor) || 0 } : g)) } : f
+      )
+    )
+  }
+
+  const alternarActividadGrupoMaquinaria = (index: number, grupoId: string, actIndex: number) => {
+    setMaquinaria((prev) =>
+      prev.map((f, i) =>
+        i === index
+          ? {
+              ...f,
+              grupos: f.grupos?.map((g) => {
+                if (g.id !== grupoId) return g
+                // Asignación directa por índice, no .map() — mismo motivo que
+                // alternarActividadCuadrilla: un grupo creado antes de agregar
+                // esta actividad tiene un array `actividades` más corto.
+                const actividades = [...g.actividades]
+                actividades[actIndex] = !actividades[actIndex]
+                return { ...g, actividades }
+              }),
+            }
+          : f
+      )
+    )
+  }
+
   // ---------- Totales calculados (mismas fórmulas que el Excel) ----------
   const totalHhDirectas = sumar(manoObraDirecta.map((f) => sumar(calcularHorasCargo(f))))
   const totalHhIndirectas = hhTotales(faena, manoObraIndirecta)
-  const totalHm = sumar(maquinaria.map((f) => sumar(f.horas.slice(0, numActividades))))
+  const totalHm = sumar(maquinaria.map((f) => sumar(calcularHorasMaquinaria(f))))
 
   // Suma de "Cantidad" (HH x actividad) de Actividades Ejecutadas — es
   // solo control interno de visualización + validación al enviar (ver
@@ -544,13 +635,20 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
           contratados: f.contratados,
           operativos: f.operativos,
         })),
-        maquinaria: maquinaria.map((f) => ({
-          equipo: f.equipo,
-          cantidad: f.cantidad,
-          mantencion: f.mantencion,
-          standby: f.standby,
-          horas_por_actividad: f.horas.slice(0, numActividades),
-        })),
+        maquinaria: maquinaria.map((f) => {
+          const gruposRealineados = f.grupos?.map((g) => ({ ...g, actividades: realinearActividadesCuadrilla(actividades, g.actividades) }))
+          return {
+            equipo: f.equipo,
+            cantidad: cantidadEfectiva(f),
+            mantencion: f.mantencion,
+            standby: f.standby,
+            horas_por_actividad:
+              gruposRealineados && gruposRealineados.length > 0
+                ? horasMaquinariaCalculadas(actividades, gruposRealineados)
+                : horasMaquinariaPorActividad(actividades, f.horas),
+            grupos: gruposRealineados,
+          }
+        }),
 
         jornada: {
           inicio: jornada.inicio,
@@ -1231,34 +1329,141 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
               </tr>
             </thead>
             <tbody>
-              {maquinaria.map((fila, index) => (
-                <tr key={fila.equipo} className="border-t border-slate-100">
-                  <td className="py-1 pr-2 text-slate-700">{fila.equipo}</td>
-                  <td className="py-1 px-1">
-                    <input type="number" value={fila.cantidad || ''} onChange={(e) => actualizarMaquinaria(index, 'cantidad', e.target.value)} className={inputNumClase} />
-                  </td>
-                  <td className="py-1 px-1">
-                    <input type="number" value={fila.mantencion || ''} onChange={(e) => actualizarMaquinaria(index, 'mantencion', e.target.value)} className={inputNumClase} />
-                  </td>
-                  <td className="py-1 px-1">
-                    <input type="number" value={fila.standby || ''} onChange={(e) => actualizarMaquinaria(index, 'standby', e.target.value)} className={inputNumClase} />
-                  </td>
-                  <td className="py-1 px-1 text-right text-slate-400 font-mono text-xs">
-                    {fila.cantidad - fila.mantencion - fila.standby}
-                  </td>
-                  {Array.from({ length: numActividades }).map((_, actIndex) => (
-                    <td key={actIndex} className="py-1 px-1">
-                      <input type="number" value={fila.horas[actIndex] || ''} onChange={(e) => actualizarHorasMaquinaria(index, actIndex, e.target.value)} className={inputNumClase} />
-                    </td>
-                  ))}
-                  <td className="py-1 pl-1 text-right font-mono text-xs text-slate-500">
-                    {sumar(fila.horas.slice(0, numActividades))}
-                  </td>
-                </tr>
-              ))}
+              {maquinaria.map((fila, index) => {
+                const tieneGrupos = Boolean(fila.grupos && fila.grupos.length > 0)
+                const expandido = equiposExpandidos.has(fila.equipo)
+                const totalColumnas = 6 + numActividades
+                return (
+                  <Fragment key={fila.equipo}>
+                    <tr className="border-t border-slate-100">
+                      <td className="py-1 pr-2 text-slate-700">
+                        <div className="flex items-center gap-1.5">
+                          {tieneGrupos && (
+                            <button
+                              type="button"
+                              onClick={() => alternarEquipoExpandido(fila.equipo)}
+                              className="text-slate-400 hover:text-slate-700 flex-shrink-0"
+                              title={expandido ? 'Ocultar grupos' : 'Ver grupos'}
+                            >
+                              {expandido ? '▾' : '▸'}
+                            </button>
+                          )}
+                          <span>{fila.equipo}</span>
+                          {!tieneGrupos && (
+                            <button
+                              type="button"
+                              onClick={() => agregarGrupoMaquinaria(index)}
+                              title="Repartir los equipos de esta fila entre grupos, cada uno con las actividades en que participó"
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 flex-shrink-0"
+                            >
+                              + Grupo
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-1 px-1">
+                        {tieneGrupos ? (
+                          <span
+                            title="Suma de las cantidades de los grupos de este equipo — ya no se tipea a mano."
+                            className="block text-right font-mono text-xs text-slate-500 px-2 py-1"
+                          >
+                            {cantidadEfectiva(fila)}
+                          </span>
+                        ) : (
+                          <input type="number" value={fila.cantidad || ''} onChange={(e) => actualizarMaquinaria(index, 'cantidad', e.target.value)} className={inputNumClase} />
+                        )}
+                      </td>
+                      <td className="py-1 px-1">
+                        <input type="number" value={fila.mantencion || ''} onChange={(e) => actualizarMaquinaria(index, 'mantencion', e.target.value)} className={inputNumClase} />
+                      </td>
+                      <td className="py-1 px-1">
+                        <input type="number" value={fila.standby || ''} onChange={(e) => actualizarMaquinaria(index, 'standby', e.target.value)} className={inputNumClase} />
+                      </td>
+                      <td className="py-1 px-1 text-right text-slate-400 font-mono text-xs">
+                        {cantidadEfectiva(fila) - fila.mantencion - fila.standby}
+                      </td>
+                      {calcularHorasMaquinaria(fila).map((horas, actIndex) =>
+                        tieneGrupos ? (
+                          <td key={actIndex} className="py-1 px-1 text-right font-mono text-xs text-slate-500">
+                            {horas || ''}
+                          </td>
+                        ) : (
+                          <td key={actIndex} className="py-1 px-1">
+                            <input type="number" value={fila.horas[actIndex] || ''} onChange={(e) => actualizarHorasMaquinaria(index, actIndex, e.target.value)} className={inputNumClase} />
+                          </td>
+                        )
+                      )}
+                      <td className="py-1 pl-1 text-right font-mono text-xs text-slate-500">
+                        {sumar(calcularHorasMaquinaria(fila))}
+                      </td>
+                    </tr>
+
+                    {tieneGrupos && expandido && (
+                      <tr key={`${fila.equipo}-grupos`} className="bg-slate-50">
+                        <td colSpan={totalColumnas} className="px-2 py-2">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-slate-400 uppercase text-[10px]">
+                                <th className="text-right font-semibold pb-1 px-2 w-20">Cantidad</th>
+                                {Array.from({ length: numActividades }).map((_, i) => (
+                                  <th key={i} className="text-center font-semibold pb-1 px-1 w-10">
+                                    Act.{i + 1}
+                                  </th>
+                                ))}
+                                <th className="w-8" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {fila.grupos!.map((g) => (
+                                <tr key={g.id} className="border-t border-slate-200">
+                                  <td className="py-1 px-2">
+                                    <input
+                                      type="number"
+                                      value={g.cantidad || ''}
+                                      onChange={(e) => actualizarGrupoMaquinaria(index, g.id, e.target.value)}
+                                      className="w-full px-2 py-1 border border-slate-300 rounded text-xs text-right focus:outline-none focus:border-blue-600"
+                                    />
+                                  </td>
+                                  {Array.from({ length: numActividades }).map((_, actIndex) => (
+                                    <td key={actIndex} className="text-center px-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={g.actividades[actIndex] ?? false}
+                                        onChange={() => alternarActividadGrupoMaquinaria(index, g.id, actIndex)}
+                                        className="w-3.5 h-3.5"
+                                      />
+                                    </td>
+                                  ))}
+                                  <td className="text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => eliminarGrupoMaquinaria(index, g.id)}
+                                      title="Quitar grupo"
+                                      className="text-red-600 hover:text-red-700"
+                                    >
+                                      🗑
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <button
+                            type="button"
+                            onClick={() => agregarGrupoMaquinaria(index)}
+                            className="mt-2 text-[11px] px-2 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700"
+                          >
+                            + Agregar grupo
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
               <tr className="border-t-2 border-slate-300 font-semibold text-slate-700">
                 <td className="py-1 pr-2">Total</td>
-                <td className="py-1 px-1 text-right">{sumar(maquinaria.map((f) => f.cantidad))}</td>
+                <td className="py-1 px-1 text-right">{sumar(maquinaria.map(cantidadEfectiva))}</td>
                 <td colSpan={3} />
                 <td colSpan={numActividades} />
                 <td className="py-1 pl-1 text-right">{totalHm}</td>

@@ -273,12 +273,27 @@ export interface LineaManoObra {
   cuadrillas?: CuadrillaManoObra[];
 }
 
+// Desglose opcional de un equipo de Maquinaria por grupo (cantidad de
+// equipos que participan en cada actividad) — pedido explícito
+// 2026-09-25: mismo mecanismo que CuadrillaManoObra, pero sin
+// "supervisor" (una máquina no tiene nombre propio como una persona) —
+// solo cantidad + en qué actividades participa ese grupo. Si un equipo
+// tiene grupos, `horas_por_actividad` deja de tipearse a mano por celda y
+// pasa a calcularse solo (HH x actividad × cantidad de equipos
+// participando), igual que ya pasa con Fuerza Laboral Directa.
+export interface GrupoMaquinaria {
+  id: string;
+  cantidad: number;
+  actividades: boolean[];
+}
+
 export interface LineaMaquinaria {
   equipo: string;
   cantidad: number;
   mantencion: number;
   standby: number;
   horas_por_actividad: number[];
+  grupos?: GrupoMaquinaria[];
 }
 
 export interface Jornada {

@@ -68,10 +68,33 @@ export function horasDirectaPorActividad(
 /**
  * Horas por actividad de una fila de Maquinaria. A diferencia de Directa,
  * estas SÍ se tipean a mano por celda, así que son estado propio que hay que
- * realinear con la misma máscara de índices — no basta con truncar.
+ * realinear con la misma máscara de índices — no basta con truncar. Solo se
+ * usa cuando el equipo NO tiene grupos (ver horasMaquinariaCalculadas).
  */
 export function horasMaquinariaPorActividad(actividades: ActividadEjecutada[], horas: number[]): number[] {
   return indicesActividadesValidas(actividades).map((i) => horas[i] ?? 0)
+}
+
+/** Grupo de Maquinaria — ver GrupoMaquinaria en types/index.ts. */
+interface GrupoParaCalculo {
+  cantidad: number
+  actividades: boolean[]
+}
+
+/**
+ * Horas por actividad de un equipo de Maquinaria calculadas desde sus
+ * grupos — mismo mecanismo que horasDirectaPorActividad con cuadrillas
+ * (pedido explícito 2026-09-25), pero sin "supervisor": cada actividad
+ * suma la cantidad de equipos de los grupos que marcaron participar en
+ * ella. Reemplaza a horasMaquinariaPorActividad (tipeado a mano) para un
+ * equipo que sí tiene grupos.
+ */
+export function horasMaquinariaCalculadas(actividades: ActividadEjecutada[], grupos: GrupoParaCalculo[]): number[] {
+  const validas = actividadesValidas(actividades)
+  return validas.map((act, i) => {
+    const cantidadEnActividad = grupos.reduce((suma, g) => suma + (g.actividades[i] ? g.cantidad : 0), 0)
+    return (act.cantidad ?? 0) * cantidadEnActividad
+  })
 }
 
 /**
@@ -91,15 +114,25 @@ interface FilaDirectaConCuadrillas {
   cuadrillas?: { actividades: boolean[] }[]
 }
 
+interface FilaMaquinariaConGrupos {
+  horas: number[]
+  grupos?: { actividades: boolean[] }[]
+}
+
 /**
  * Quita la actividad en `index` y saca esa misma posición de cada array de
- * horas de maquinaria (y, si se pasa, de cada `actividades` de cuadrilla de
- * mano de obra directa — mismo motivo, ver CuadrillaManoObra en
- * types/index.ts), para que no se corran. `manoObraDirecta` es opcional y
- * por eso queda al final: los llamados existentes (y sus pruebas) que no lo
- * pasan siguen funcionando igual, sin tocar ninguna cuadrilla.
+ * horas de maquinaria, de cada `actividades` de grupo de maquinaria (ver
+ * GrupoMaquinaria en types/index.ts, pedido explícito 2026-09-25) y, si se
+ * pasa, de cada `actividades` de cuadrilla de mano de obra directa (mismo
+ * motivo, ver CuadrillaManoObra), para que no se corran. `manoObraDirecta`
+ * es opcional y por eso queda al final: los llamados existentes (y sus
+ * pruebas) que no lo pasan siguen funcionando igual, sin tocar ninguna
+ * cuadrilla.
  */
-export function quitarActividad<TMaq extends { horas: number[] }, TDir extends FilaDirectaConCuadrillas = FilaDirectaConCuadrillas>(
+export function quitarActividad<
+  TMaq extends FilaMaquinariaConGrupos = FilaMaquinariaConGrupos,
+  TDir extends FilaDirectaConCuadrillas = FilaDirectaConCuadrillas
+>(
   actividades: ActividadEjecutada[],
   maquinaria: TMaq[],
   index: number,
@@ -107,7 +140,11 @@ export function quitarActividad<TMaq extends { horas: number[] }, TDir extends F
 ): { actividades: ActividadEjecutada[]; maquinaria: TMaq[]; manoObraDirecta?: TDir[] } {
   return {
     actividades: actividades.filter((_, i) => i !== index),
-    maquinaria: maquinaria.map((f) => ({ ...f, horas: f.horas.filter((_, i) => i !== index) })),
+    maquinaria: maquinaria.map((f) => ({
+      ...f,
+      horas: f.horas.filter((_, i) => i !== index),
+      grupos: f.grupos?.map((g) => ({ ...g, actividades: g.actividades.filter((_, i) => i !== index) })),
+    })),
     manoObraDirecta: manoObraDirecta?.map((f) => ({
       ...f,
       cuadrillas: f.cuadrillas?.map((c) => ({ ...c, actividades: c.actividades.filter((_, i) => i !== index) })),
