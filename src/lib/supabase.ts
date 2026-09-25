@@ -950,6 +950,45 @@ export const db = {
     if (error) throw error
   },
 
+  // ---------- Eventos de tránsito (Subida/Bajada sueltas) ----------
+  // Ver add_eventos_transito.sql. Un día suelto, independiente de
+  // cualquier CuadrillaTurno — mismo acceso RLS (coordinador y consultor).
+  async obtenerEventosTransito() {
+    const { data, error } = await supabase
+      .from('eventos_transito')
+      .select('*, trabajadores:eventos_transito_trabajadores(*)')
+      .order('fecha', { ascending: true })
+
+    if (error) throw error
+    return data
+  },
+
+  async crearEventoTransito(evento: { tipo: 'subida' | 'bajada'; fecha: string; creado_por: string }) {
+    const { data, error } = await supabase.from('eventos_transito').insert([evento]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  async eliminarEventoTransito(id: string) {
+    // eventos_transito_trabajadores tiene "on delete cascade".
+    const { error } = await supabase.from('eventos_transito').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  async agregarTrabajadorEventoTransito(trabajador: { evento_id: string; nombre: string; apellido: string; rut: string; cargo: string }) {
+    const { data, error } = await supabase.from('eventos_transito_trabajadores').insert([trabajador]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  async agregarTrabajadoresEventoTransito(
+    trabajadores: { evento_id: string; nombre: string; apellido: string; rut: string; cargo: string }[]
+  ) {
+    const { data, error } = await supabase.from('eventos_transito_trabajadores').insert(trabajadores).select()
+    if (error) throw error
+    return data
+  },
+
   // ---------- Reservas de Pasajes ----------
   // Ver add_reservas_pasaje.sql. Mismo acceso RLS que cuadrillas_turno
   // (coordinador y consultor). Las filas candidatas (quién sube/baja y

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { CuadrillaTurno, Usuario } from '@/types/index'
+import { CuadrillaTurno, EventoTransito, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
 import { PRESETS_TURNO, PatronTurno } from './lib/presetsTurno'
 import { CALENDARIO_INICIO, TAMANO_VENTANA, enInicioDeRango, enFinDeRango, limitarInicioVentana, sumarDias } from './lib/rangoFechas'
@@ -9,6 +9,8 @@ import { esFeriado, nombreFeriado } from './lib/feriados'
 import { ModalAgregarTurno } from './ModalAgregarTurno'
 import { ModalEditarTurno } from './ModalEditarTurno'
 import { ModalAgregarFuncionario } from './ModalAgregarFuncionario'
+import { ModalAgregarEventoTransito } from './ModalAgregarEventoTransito'
+import { ModalAgregarFuncionarioEvento } from './ModalAgregarFuncionarioEvento'
 import { ReservasPasajes } from './ReservasPasajes'
 
 interface OrganizadorTurnosProps {
@@ -26,6 +28,7 @@ type Vista = 'gantt' | 'reservas'
 export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [vista, setVista] = useState<Vista>('gantt')
   const [cuadrillas, setCuadrillas] = useState<CuadrillaTurno[]>([])
+  const [eventosTransito, setEventosTransito] = useState<EventoTransito[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,17 +38,32 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [modalPatron, setModalPatron] = useState<PatronTurno | null | undefined>(undefined)
   const [cuadrillaFuncionarioId, setCuadrillaFuncionarioId] = useState<string | null | undefined>(undefined)
   const [cuadrillaEditando, setCuadrillaEditando] = useState<CuadrillaTurno | null>(null)
+  // Subida/Bajada sueltas (ver EventoTransito) — 'subida' | 'bajada' abre el
+  // modal de creación con ese tipo fijo; el id abre "agregar funcionario"
+  // para un evento ya creado.
+  const [modalEvento, setModalEvento] = useState<'subida' | 'bajada' | undefined>(undefined)
+  const [eventoFuncionarioId, setEventoFuncionarioId] = useState<string | undefined>(undefined)
 
   const [arrastrandoId, setArrastrandoId] = useState<string | null>(null)
   const [sobreId, setSobreId] = useState<string | null>(null)
   const [columnaHover, setColumnaHover] = useState<number | null>(null)
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
+  const [eventosExpandidos, setEventosExpandidos] = useState<Set<string>>(new Set())
   const [ocultas, setOcultas] = useState<Set<string>>(new Set())
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
   const [menuContextual, setMenuContextual] = useState<{ cuadrillaId: string; x: number; y: number } | null>(null)
 
   const alternarExpandida = (id: string) => {
     setExpandidas((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(id)) siguiente.delete(id)
+      else siguiente.add(id)
+      return siguiente
+    })
+  }
+
+  const alternarEventoExpandido = (id: string) => {
+    setEventosExpandidos((prev) => {
       const siguiente = new Set(prev)
       if (siguiente.has(id)) siguiente.delete(id)
       else siguiente.add(id)
@@ -85,8 +103,9 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
     setCargando(true)
     setError(null)
     try {
-      const data = await db.obtenerCuadrillasTurno()
-      setCuadrillas(data as CuadrillaTurno[])
+      const [datosCuadrillas, datosEventos] = await Promise.all([db.obtenerCuadrillasTurno(), db.obtenerEventosTransito()])
+      setCuadrillas(datosCuadrillas as CuadrillaTurno[])
+      setEventosTransito(datosEventos as EventoTransito[])
     } catch (err) {
       setError(traducirError(err, 'No se pudieron cargar los turnos'))
     } finally {
@@ -164,6 +183,19 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
     }
   }
 
+  const eliminarEvento = async (evento: EventoTransito) => {
+    const etiqueta = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
+    const ok = window.confirm(`¿Eliminar esta ${etiqueta} suelta del ${evento.fecha}? Esta acción no se puede deshacer.`)
+    if (!ok) return
+    setError(null)
+    try {
+      await db.eliminarEventoTransito(evento.id)
+      setEventosTransito((prev) => prev.filter((e) => e.id !== evento.id))
+    } catch (err) {
+      setError(traducirError(err, `No se pudo eliminar la ${etiqueta.toLowerCase()}`))
+    }
+  }
+
   const soltarCuadrilla = async (destino: CuadrillaTurno) => {
     if (!arrastrandoId || arrastrandoId === destino.id) return
     const origenIdx = cuadrillas.findIndex((c) => c.id === arrastrandoId)
@@ -221,6 +253,22 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-800 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               + Agregar Funcionario
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalEvento('subida')}
+              title="Agregar una Subida suelta de un solo día, independiente de cualquier turno"
+              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors"
+            >
+              + ▲ Subida
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalEvento('bajada')}
+              title="Agregar una Bajada suelta de un solo día, independiente de cualquier turno"
+              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors"
+            >
+              + ▼ Bajada
             </button>
             <button
               type="button"
@@ -296,12 +344,12 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
 
       {vista === 'gantt' && (cargando ? (
         <p className="text-sm text-slate-500 py-12 text-center">Cargando…</p>
-      ) : cuadrillas.length === 0 ? (
+      ) : cuadrillas.length === 0 && eventosTransito.length === 0 ? (
         <div className="py-12 text-center">
-          <p className="text-sm text-slate-500">Aún no hay turnos creados.</p>
-          <p className="text-xs text-slate-400 mt-1">Usa los botones de preconfiguración o "Agregar Turno" para comenzar.</p>
+          <p className="text-sm text-slate-500">Aún no hay turnos ni subidas/bajadas sueltas creadas.</p>
+          <p className="text-xs text-slate-400 mt-1">Usa los botones de preconfiguración, "Agregar Turno", o "+ ▲ Subida" / "+ ▼ Bajada" para comenzar.</p>
         </div>
-      ) : cuadrillasVisibles.length === 0 ? (
+      ) : cuadrillasVisibles.length === 0 && eventosTransito.length === 0 ? (
         <div className="py-12 text-center">
           <p className="text-sm text-slate-500">Todos los turnos están ocultos.</p>
           <button
@@ -529,6 +577,121 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               </Fragment>
               )
             })}
+
+            {eventosTransito.length > 0 && (
+              <>
+                <div className="px-3 sm:px-4 py-1.5 bg-slate-50 border-b border-t border-slate-200 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Subidas / Bajadas sueltas
+                </div>
+                {eventosTransito.map((evento) => {
+                  const estaExpandido = eventosExpandidos.has(evento.id)
+                  const etiquetaTipo = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
+                  return (
+                    <Fragment key={evento.id}>
+                      <div className="flex border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <div className="w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 border-r border-slate-200 sticky left-0 bg-white z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-0">
+                          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => alternarEventoExpandido(evento.id)}
+                              title={estaExpandido ? 'Ocultar trabajadores asignados' : 'Ver trabajadores asignados'}
+                              className="text-slate-400 hover:text-slate-700 flex-shrink-0"
+                            >
+                              {estaExpandido ? '▾' : '▸'}
+                            </button>
+                            <div className="min-w-0">
+                              <h3 className="font-semibold text-sm text-slate-800 truncate">
+                                {evento.tipo === 'subida' ? '▲' : '▼'} {etiquetaTipo} suelta
+                              </h3>
+                              <button
+                                type="button"
+                                onClick={() => alternarEventoExpandido(evento.id)}
+                                className="text-xs text-slate-500 hover:text-blue-600 hover:underline"
+                              >
+                                {evento.trabajadores.length} trabajadores
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-0.5 sm:gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEventoFuncionarioId(evento.id)}
+                              title="Agregar funcionario"
+                              className="p-1 hover:bg-slate-100 rounded text-slate-600"
+                            >
+                              +👤
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => eliminarEvento(evento)}
+                              title={`Eliminar ${etiquetaTipo.toLowerCase()}`}
+                              className="p-1 hover:bg-slate-100 rounded text-red-600"
+                            >
+                              🗑
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center">
+                          {columnasFecha.map((fecha, idx) => {
+                            const fechaStr = fecha.toISOString().split('T')[0]
+                            const esElDia = fechaStr === evento.fecha
+                            return (
+                              <div
+                                key={idx}
+                                onMouseEnter={() => setColumnaHover(idx)}
+                                onMouseLeave={() => setColumnaHover((c) => (c === idx ? null : c))}
+                                className={`relative w-12 h-10 border-r border-slate-100 flex items-center justify-center text-[10px] font-bold select-none ${
+                                  esElDia ? 'bg-amber-800 text-white' : 'bg-white'
+                                }`}
+                                title={esElDia ? `${etiquetaTipo} suelta | ${evento.fecha}` : undefined}
+                              >
+                                {esElDia && (evento.tipo === 'subida' ? '▲' : '▼')}
+                                {esFeriado(fecha) && <div className="absolute inset-0 bg-yellow-200/50 pointer-events-none" />}
+                                {columnaHover === idx && <div className="absolute inset-0 bg-emerald-300/40 pointer-events-none" />}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {estaExpandido && (
+                        <div className="bg-slate-50 border-b border-slate-100 px-4 sm:px-6 py-3">
+                          <p className="text-xs font-semibold text-slate-500 uppercase mb-2">
+                            Trabajadores asignados — {etiquetaTipo} suelta del {evento.fecha}
+                          </p>
+                          {evento.trabajadores.length === 0 ? (
+                            <p className="text-xs text-slate-400">Sin trabajadores asignados todavía.</p>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="text-xs text-left min-w-[400px]">
+                                <thead>
+                                  <tr className="text-slate-400 uppercase text-[10px]">
+                                    <th className="font-semibold pr-4 pb-1">Nombre</th>
+                                    <th className="font-semibold pr-4 pb-1">RUT</th>
+                                    <th className="font-semibold pb-1">Cargo</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {evento.trabajadores.map((t) => (
+                                    <tr key={t.id} className="border-t border-slate-200">
+                                      <td className="pr-4 py-1 text-slate-800">{t.nombre} {t.apellido}</td>
+                                      <td className="pr-4 py-1 text-slate-600">{t.rut}</td>
+                                      <td className="py-1 text-slate-600">{t.cargo}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </>
+            )}
           </div>
         </div>
       ))}
@@ -543,7 +706,13 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       )}
 
       {vista === 'reservas' && (
-        <ReservasPasajes cuadrillas={cuadrillas} inicioVentanaFecha={inicioVentanaFecha} diasVentana={TAMANO_VENTANA} usuario={usuario} />
+        <ReservasPasajes
+          cuadrillas={cuadrillas}
+          eventosTransito={eventosTransito}
+          inicioVentanaFecha={inicioVentanaFecha}
+          diasVentana={TAMANO_VENTANA}
+          usuario={usuario}
+        />
       )}
 
       {modalPatron !== undefined && (
@@ -577,6 +746,28 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           onGuardado={(actualizada) => {
             setCuadrillas((prev) => prev.map((c) => (c.id === actualizada.id ? actualizada : c)))
             setCuadrillaEditando(null)
+          }}
+        />
+      )}
+
+      {modalEvento !== undefined && (
+        <ModalAgregarEventoTransito
+          tipo={modalEvento}
+          usuario={usuario}
+          onCerrar={() => setModalEvento(undefined)}
+          onCreado={(nuevo) => { setEventosTransito((prev) => [...prev, nuevo]); setModalEvento(undefined) }}
+        />
+      )}
+
+      {eventoFuncionarioId !== undefined && (
+        <ModalAgregarFuncionarioEvento
+          evento={eventosTransito.find((e) => e.id === eventoFuncionarioId)!}
+          onCerrar={() => setEventoFuncionarioId(undefined)}
+          onAgregados={(eventoId, trabajadores) => {
+            setEventosTransito((prev) =>
+              prev.map((e) => (e.id === eventoId ? { ...e, trabajadores: [...e.trabajadores, ...trabajadores] } : e))
+            )
+            setEventoFuncionarioId(undefined)
           }}
         />
       )}

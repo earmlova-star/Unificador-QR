@@ -1,20 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { CuadrillaTurno, ReservaPasaje, TrabajadorCuadrilla, Usuario } from '@/types/index'
+import { CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
 import { UBICACION_TERMINAL, UBICACION_FAENA, origenDestino } from './lib/ubicaciones'
 
 interface ReservasPasajesProps {
   cuadrillas: CuadrillaTurno[]
+  eventosTransito: EventoTransito[]
   inicioVentanaFecha: Date
   diasVentana: number
   usuario: Usuario
 }
 
+// Forma mínima que necesita esta pantalla de una persona que viaja — la
+// cumplen tanto TrabajadorCuadrilla como EventoTransitoTrabajador
+// (estructuralmente, sin necesidad de convertir nada).
+interface PersonaViaje {
+  id: string
+  nombre: string
+  apellido: string
+  rut: string
+  cargo: string
+}
+
 interface Candidato {
   clave: string
-  trabajador: TrabajadorCuadrilla
+  trabajador: PersonaViaje
   cuadrillaNombre: string
   fecha: string
   tipo: 'subida' | 'bajada'
@@ -24,10 +36,14 @@ function claveCandidato(trabajadorId: string, fecha: string, tipo: 'subida' | 'b
   return `${trabajadorId}|${fecha}|${tipo}`
 }
 
-// Candidatos = quién sube/baja y cuándo, calculado desde el motor de
-// turnos (no se guarda en la base). Cada trabajador de una cuadrilla
-// comparte la misma fecha de subida/bajada que su cuadrilla.
-function calcularCandidatos(cuadrillas: CuadrillaTurno[], inicioVentana: Date, dias: number): Candidato[] {
+// Candidatos = quién sube/baja y cuándo. La mayoría sale del motor de
+// turnos (no se guarda en la base) — cada trabajador de una cuadrilla
+// comparte la misma fecha de subida/bajada que su cuadrilla. A eso se
+// suman las Subidas/Bajadas sueltas (EventoTransito, pedido explícito
+// 2026-09-24): un día fijo, independiente de cualquier cuadrilla, con su
+// propia lista de trabajadores — filtradas a la ventana visible igual que
+// hace el motor de turnos con las suyas.
+function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: EventoTransito[], inicioVentana: Date, dias: number): Candidato[] {
   const candidatos: Candidato[] = []
   for (const cuadrilla of cuadrillas) {
     if (cuadrilla.trabajadores.length === 0) continue
@@ -46,10 +62,29 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], inicioVentana: Date, d
       }
     }
   }
+
+  const fechaDesdeStr = inicioVentana.toISOString().split('T')[0]
+  const fechaHastaVentana = new Date(inicioVentana)
+  fechaHastaVentana.setDate(fechaHastaVentana.getDate() + dias - 1)
+  const fechaHastaStr = fechaHastaVentana.toISOString().split('T')[0]
+
+  for (const evento of eventosTransito) {
+    if (evento.fecha < fechaDesdeStr || evento.fecha > fechaHastaStr) continue
+    for (const trabajador of evento.trabajadores) {
+      candidatos.push({
+        clave: claveCandidato(trabajador.id, evento.fecha, evento.tipo),
+        trabajador,
+        cuadrillaNombre: evento.tipo === 'subida' ? 'Subida suelta' : 'Bajada suelta',
+        fecha: evento.fecha,
+        tipo: evento.tipo,
+      })
+    }
+  }
+
   return candidatos
 }
 
-export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, usuario }: ReservasPasajesProps) => {
+export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFecha, diasVentana, usuario }: ReservasPasajesProps) => {
   const [reservas, setReservas] = useState<ReservaPasaje[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -82,8 +117,8 @@ export const ReservasPasajes = ({ cuadrillas, inicioVentanaFecha, diasVentana, u
   }, [fechaDesde, fechaHasta])
 
   const candidatos = useMemo(
-    () => calcularCandidatos(cuadrillas, inicioVentanaFecha, diasVentana),
-    [cuadrillas, inicioVentanaFecha, diasVentana]
+    () => calcularCandidatos(cuadrillas, eventosTransito, inicioVentanaFecha, diasVentana),
+    [cuadrillas, eventosTransito, inicioVentanaFecha, diasVentana]
   )
 
   const reservaDe = (c: Candidato) => reservas.find((r) => r.trabajador_id === c.trabajador.id && r.fecha === c.fecha && r.tipo === c.tipo)

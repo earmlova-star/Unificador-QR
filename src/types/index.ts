@@ -397,6 +397,35 @@ export interface CuadrillaTurno {
   trabajadores: TrabajadorCuadrilla[];
 }
 
+// Subida o Bajada suelta, de un solo día — pedido explícito 2026-09-24:
+// "agregar subida o bajada un día", independiente de cualquier Turno (no
+// repite ningún ciclo semanal/patrón). Tabla propia (ver
+// add_eventos_transito.sql), no una CuadrillaTurno degenerada, para no
+// mezclar la matemática de generarLineaTiempoCuadrilla (motorTurnos.ts)
+// con un evento de un solo día. Aparece en la Carta Gantt como una fila
+// propia y también como candidato en Reservas de Pasajes.
+export interface EventoTransitoTrabajador {
+  id: string;
+  evento_id: string;
+  nombre: string;
+  apellido: string;
+  rut: string;
+  cargo: string;
+  created_at: string;
+}
+
+export interface EventoTransito {
+  id: string;
+  tipo: 'subida' | 'bajada';
+  fecha: string; // YYYY-MM-DD
+
+  creado_por: string;
+  created_at: string;
+  updated_at: string;
+
+  trabajadores: EventoTransitoTrabajador[];
+}
+
 // Módulo "Reservas de Pasajes" (pestaña de Organizador de Turnos, ver
 // add_reservas_pasaje.sql). Una fila por (trabajador, fecha, tipo) — solo
 // existe en la base una vez que alguien edita algo de esa reserva; antes
