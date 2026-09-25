@@ -447,6 +447,12 @@ export interface EventoTransito {
   tipo: 'subida' | 'bajada';
   fecha: string; // YYYY-MM-DD
 
+  // ConfiguracionViaje asignada (ver CuadrillaTurno.config_subida_id) —
+  // pedido explícito 2026-09-25: al crear una Subida/Bajada suelta se
+  // puede elegir una configuración ya cargada, filtrada por este mismo
+  // tipo, en vez de caer siempre al Origen/Destino genérico.
+  configuracion_id?: string | null;
+
   creado_por: string;
   created_at: string;
   updated_at: string;

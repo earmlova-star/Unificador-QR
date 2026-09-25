@@ -801,6 +801,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       {modalEvento !== undefined && (
         <ModalAgregarEventoTransito
           tipo={modalEvento}
+          configuraciones={configuraciones}
           usuario={usuario}
           onCerrar={() => setModalEvento(undefined)}
           onCreado={(nuevo) => { setEventosTransito((prev) => [...prev, nuevo]); setModalEvento(undefined) }}

@@ -49,8 +49,10 @@ function claveCandidato(trabajadorId: string, fecha: string, tipo: 'subida' | 'b
 // las Subidas/Bajadas sueltas (EventoTransito, pedido explícito
 // 2026-09-24): un día fijo, independiente de cualquier cuadrilla, con su
 // propia lista de trabajadores — filtradas a la ventana visible igual que
-// hace el motor de turnos con las suyas. Estas no tienen configuración
-// propia (no pertenecen a ningún turno).
+// hace el motor de turnos con las suyas. No pertenecen a ningún turno,
+// pero sí pueden tener su propia ConfiguracionViaje asignada directamente
+// (evento.configuracion_id, elegida al crearlas — pedido explícito
+// 2026-09-25), a diferencia de heredarla de un turno.
 function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: EventoTransito[], inicioVentana: Date, dias: number): Candidato[] {
   const candidatos: Candidato[] = []
   for (const cuadrilla of cuadrillas) {
@@ -87,7 +89,7 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
         cuadrillaNombre: evento.tipo === 'subida' ? 'Subida suelta' : 'Bajada suelta',
         fecha: evento.fecha,
         tipo: evento.tipo,
-        configuracionId: null,
+        configuracionId: evento.configuracion_id ?? null,
       })
     }
   }

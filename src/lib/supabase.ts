@@ -965,7 +965,7 @@ export const db = {
     return data
   },
 
-  async crearEventoTransito(evento: { tipo: 'subida' | 'bajada'; fecha: string; creado_por: string }) {
+  async crearEventoTransito(evento: { tipo: 'subida' | 'bajada'; fecha: string; configuracion_id: string | null; creado_por: string }) {
     const { data, error } = await supabase.from('eventos_transito').insert([evento]).select().single()
     if (error) throw error
     return data

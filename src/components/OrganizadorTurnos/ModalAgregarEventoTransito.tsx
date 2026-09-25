@@ -2,13 +2,14 @@ import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { EventoTransito, Usuario } from '@/types/index'
+import { ConfiguracionViaje, EventoTransito, Usuario } from '@/types/index'
 import { CALENDARIO_INICIO, CALENDARIO_FIN } from './lib/rangoFechas'
 import { validarRut, formatearRut } from './lib/rut'
 import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
 
 interface ModalAgregarEventoTransitoProps {
   tipo: 'subida' | 'bajada'
+  configuraciones: ConfiguracionViaje[]
   usuario: Usuario
   onCerrar: () => void
   onCreado: (evento: EventoTransito) => void
@@ -31,8 +32,9 @@ function funcionarioVacio(): FuncionarioBorrador {
 // types/index.ts. Misma estructura que ModalAgregarTurno.tsx (fecha +
 // funcionarios uno por uno o pegado masivo), sin los campos de patrón que
 // acá no aplican.
-export const ModalAgregarEventoTransito = ({ tipo, usuario, onCerrar, onCreado }: ModalAgregarEventoTransitoProps) => {
+export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onCerrar, onCreado }: ModalAgregarEventoTransitoProps) => {
   const [fecha, setFecha] = useState(CALENDARIO_INICIO)
+  const [configuracionId, setConfiguracionId] = useState('')
   const [funcionarios, setFuncionarios] = useState<FuncionarioBorrador[]>([])
   const [mostrarPegado, setMostrarPegado] = useState(false)
   const [textoMasivo, setTextoMasivo] = useState('')
@@ -74,7 +76,7 @@ export const ModalAgregarEventoTransito = ({ tipo, usuario, onCerrar, onCreado }
 
     setGuardando(true)
     try {
-      const evento = await db.crearEventoTransito({ tipo, fecha, creado_por: usuario.id })
+      const evento = await db.crearEventoTransito({ tipo, fecha, configuracion_id: configuracionId || null, creado_por: usuario.id })
 
       const trabajadoresCreados = funcionarios.length
         ? await db.agregarTrabajadoresEventoTransito(
@@ -117,6 +119,24 @@ export const ModalAgregarEventoTransito = ({ tipo, usuario, onCerrar, onCreado }
                 onChange={(e) => setFecha(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Configuración de viaje</label>
+              <select
+                value={configuracionId}
+                onChange={(e) => setConfiguracionId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              >
+                <option value="">Sin asignar (Origen/Destino genérico)</option>
+                {configuraciones
+                  .filter((c) => c.tipo === tipo)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.hora} — {c.origen} → {c.destino}
+                    </option>
+                  ))}
+              </select>
             </div>
 
             <div>
