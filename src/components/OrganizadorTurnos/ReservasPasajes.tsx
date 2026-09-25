@@ -130,7 +130,13 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFech
     >
   ) => {
     const existente = reservaDe(c)
-    const { origen, destino } = origenDestino(c.tipo, terminal, faena)
+    // El horario "en vivo" de este guardado (si es lo que se está editando
+    // ahora mismo) manda sobre el ya guardado, para que origen/destino
+    // salgan bien la primera vez que se guarda la reserva — ver
+    // origenDestino en lib/ubicaciones.ts (la subida de las 17:00 llega al
+    // hotel, no a la faena).
+    const horarioEfectivo = cambios.horario !== undefined ? cambios.horario : existente?.horario
+    const { origen, destino } = origenDestino(c.tipo, terminal, faena, horarioEfectivo)
     setError(null)
     try {
       const guardada = await db.guardarReservaPasaje({
@@ -201,7 +207,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, inicioVentanaFech
 
   const renderGrupo = (c: Candidato) => {
     const reserva = reservaDe(c)
-    const { origen, destino } = origenDestino(c.tipo, terminal, faena)
+    const { origen, destino } = origenDestino(c.tipo, terminal, faena, reserva?.horario)
     return (
       <tr key={c.clave} className={reserva?.confirmada ? 'bg-green-50/40' : ''}>
         <td className="px-3 py-1.5 text-slate-800 whitespace-nowrap">{c.trabajador.nombre} {c.trabajador.apellido}</td>
