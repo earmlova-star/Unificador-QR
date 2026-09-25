@@ -98,20 +98,24 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
 }
 
 // Resuelve el viaje efectivo de un candidato: si tiene una
-// ConfiguracionViaje asignada (por su turno), usa su Origen/Destino/Hora;
-// si no, cae al Origen/Destino genérico de siempre (Terminal ↔ Faena),
-// sin hora sugerida.
+// ConfiguracionViaje asignada (por su turno) que todavía existe, usa su
+// Origen/Destino/Hora; si no (sin asignar, o la asignada se borró), cae
+// al Origen/Destino genérico de siempre (Terminal ↔ Faena), sin hora
+// sugerida. `configResuelta` distingue esos dos casos — pedido explícito
+// 2026-09-25: si el turno SÍ tiene una configuración vigente, esta manda
+// siempre (incluso sobre una reserva que ya se había guardado antes de
+// asignarla), no solo como default la primera vez que se guarda.
 function resolverViaje(
   tipo: 'subida' | 'bajada',
   configuracionId: string | null,
   configuraciones: ConfiguracionViaje[],
   terminal: string,
   faena: string
-): { origen: string; destino: string; horaSugerida: string | null } {
+): { origen: string; destino: string; horaSugerida: string | null; configResuelta: boolean } {
   const config = configuracionId ? configuraciones.find((c) => c.id === configuracionId) : undefined
-  if (config) return { origen: config.origen, destino: config.destino, horaSugerida: config.hora }
+  if (config) return { origen: config.origen, destino: config.destino, horaSugerida: config.hora, configResuelta: true }
   const { origen, destino } = origenDestino(tipo, terminal, faena)
-  return { origen, destino, horaSugerida: null }
+  return { origen, destino, horaSugerida: null, configResuelta: false }
 }
 
 export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, inicioVentanaFecha, diasVentana, usuario }: ReservasPasajesProps) => {
@@ -161,18 +165,19 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   ) => {
     const existente = reservaDe(c)
     // Si el turno de este candidato tiene una ConfiguracionViaje asignada
-    // para esta dirección, su Origen/Destino/Hora son el default al
-    // guardar la reserva por primera vez (ver resolverViaje) — si no,
-    // cae al Origen/Destino genérico de siempre.
-    const { origen, destino, horaSugerida } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
+    // (y todavía existe), su Origen/Destino manda siempre — incluso por
+    // encima de un Origen/Destino ya guardado de antes de asignarla (ver
+    // resolverViaje) — así que se guarda de nuevo con cada edición, no
+    // solo la primera vez. Su Hora sigue siendo solo el default inicial.
+    const { origen, destino, horaSugerida, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
     setError(null)
     try {
       const guardada = await db.guardarReservaPasaje({
         trabajador_id: c.trabajador.id,
         fecha: c.fecha,
         tipo: c.tipo,
-        origen: existente?.origen ?? origen,
-        destino: existente?.destino ?? destino,
+        origen: configResuelta ? origen : existente?.origen ?? origen,
+        destino: configResuelta ? destino : existente?.destino ?? destino,
         horario: existente?.horario ?? horaSugerida ?? null,
         confirmada: existente?.confirmada ?? false,
         confirmada_por: existente?.confirmada_por ?? null,
@@ -256,14 +261,19 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
 
   const renderGrupo = (c: Candidato) => {
     const reserva = reservaDe(c)
-    const { origen, destino, horaSugerida } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
+    const { origen, destino, horaSugerida, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
+    // Con configuración vigente, esta manda siempre sobre lo ya guardado
+    // (ver resolverViaje) — sin ella, se respeta lo guardado como hasta
+    // ahora, o el genérico si todavía no se ha guardado nada.
+    const origenMostrado = configResuelta ? origen : reserva?.origen ?? origen
+    const destinoMostrado = configResuelta ? destino : reserva?.destino ?? destino
     return (
       <tr key={c.clave} className={reserva?.confirmada ? 'bg-green-50/40' : ''}>
         <td className="px-3 py-1.5 text-slate-800 whitespace-nowrap">{c.trabajador.nombre} {c.trabajador.apellido}</td>
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.trabajador.rut}</td>
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.cuadrillaNombre}</td>
         <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap" title={`Fecha de viaje: ${c.fecha}`}>{formatearFechaCorta(c.fecha)}</td>
-        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{reserva?.origen ?? origen} → {reserva?.destino ?? destino}</td>
+        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{origenMostrado} → {destinoMostrado}</td>
         <td className="px-3 py-1.5">
           <input
             type="text"
