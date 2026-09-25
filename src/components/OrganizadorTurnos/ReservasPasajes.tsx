@@ -259,6 +259,23 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   const formatearFechaCorta = (fechaISO: string) =>
     new Date(`${fechaISO}T00:00:00`).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
 
+  const formatearFechaMedia = (fechaISO: string) =>
+    new Date(`${fechaISO}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' })
+
+  // Dentro de un grupo de Fecha de Reserva puede haber gente viajando en
+  // días distintos (esa es la idea: reservar de una vez el pasaje de
+  // varios días de subida/bajada) — pedido explícito 2026-09-25: eso
+  // tiene que verse como sub-grupos por fecha de viaje real, no como una
+  // lista plana. Ordenados por fecha de viaje ascendente.
+  const agruparPorFechaViaje = (lista: Candidato[]): [string, Candidato[]][] => {
+    const mapa = new Map<string, Candidato[]>()
+    for (const c of lista) {
+      if (!mapa.has(c.fecha)) mapa.set(c.fecha, [])
+      mapa.get(c.fecha)!.push(c)
+    }
+    return [...mapa.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }
+
   const renderGrupo = (c: Candidato) => {
     const reserva = reservaDe(c)
     const { origen, destino, horaSugerida, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
@@ -385,21 +402,39 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
 
               {grupos.subida.length > 0 && (
                 <div className="px-3 py-2 border-b border-slate-100 last:border-b-0">
-                  <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-1">▲ Suben ({grupos.subida.length})</p>
-                  <table className="min-w-full text-xs">
-                    {tablaCabecera}
-                    <tbody className="divide-y divide-slate-100">{grupos.subida.map(renderGrupo)}</tbody>
-                  </table>
+                  <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-2">▲ Suben ({grupos.subida.length})</p>
+                  <div className="space-y-3">
+                    {agruparPorFechaViaje(grupos.subida).map(([fechaViaje, lista]) => (
+                      <div key={fechaViaje}>
+                        <p className="text-[11px] font-semibold text-slate-500 capitalize mb-1">
+                          {formatearFechaMedia(fechaViaje)} ({lista.length})
+                        </p>
+                        <table className="min-w-full text-xs">
+                          {tablaCabecera}
+                          <tbody className="divide-y divide-slate-100">{lista.map(renderGrupo)}</tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
               {grupos.bajada.length > 0 && (
                 <div className="px-3 py-2">
-                  <p className="text-[10px] font-semibold text-amber-700 uppercase mb-1">▼ Bajan ({grupos.bajada.length})</p>
-                  <table className="min-w-full text-xs">
-                    {tablaCabecera}
-                    <tbody className="divide-y divide-slate-100">{grupos.bajada.map(renderGrupo)}</tbody>
-                  </table>
+                  <p className="text-[10px] font-semibold text-amber-700 uppercase mb-2">▼ Bajan ({grupos.bajada.length})</p>
+                  <div className="space-y-3">
+                    {agruparPorFechaViaje(grupos.bajada).map(([fechaViaje, lista]) => (
+                      <div key={fechaViaje}>
+                        <p className="text-[11px] font-semibold text-slate-500 capitalize mb-1">
+                          {formatearFechaMedia(fechaViaje)} ({lista.length})
+                        </p>
+                        <table className="min-w-full text-xs">
+                          {tablaCabecera}
+                          <tbody className="divide-y divide-slate-100">{lista.map(renderGrupo)}</tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
