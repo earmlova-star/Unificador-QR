@@ -334,7 +334,11 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     if (editando) return
     if (!contrato?.id) return
     setIsLoading(true)
-    db.obtenerSiguienteNumeroParte(contrato.id)
+    // Solo previsualiza (no reserva/incrementa el contador): este efecto
+    // corre cada vez que se ABRE el formulario, incluso si el usuario
+    // termina cancelando sin guardar. El número real se pide recién al
+    // guardar (ver guardar()) — bug de saltos de correlativo 2026-09-26.
+    db.previsualizarSiguienteNumeroParte(contrato.id)
       .then(setNumeroReporte)
       .catch((err) => setError(traducirError(err, 'No se pudo obtener el N° de reporte')))
       .finally(() => setIsLoading(false))
@@ -692,6 +696,13 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         // UPDATE no aplica y se avisa en vez de pisarlo en silencio.
         parte = await db.actualizarParteDiarioSiEstado(parteExistente.id, parteExistente.estado, updates)
       } else {
+        // Recién ahora se reserva el número de verdad (incrementa el
+        // contador atómico) — el `numeroReporte` mostrado hasta este punto
+        // era solo una previsualización sin reservar nada (ver el useEffect
+        // de arriba y el bug de saltos de correlativo 2026-09-26).
+        const numeroReporteReal = await db.obtenerSiguienteNumeroParte(contrato.id)
+        setNumeroReporte(numeroReporteReal)
+
         // hh_*_acumuladas acá es solo un valor inicial razonable (por si
         // recalcularAcumuladosFaena de abajo llegara a fallar después de
         // esta inserción) — el recálculo de la cadena completa es el que
@@ -699,7 +710,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         // reporte de la faena para sumarle el de este.
         parte = await db.crearParteDiario({
           contrato_id: contrato.id,
-          numero_reporte: numeroReporte,
+          numero_reporte: numeroReporteReal,
           ...camposComunes,
 
           hh_directas_acumuladas: totalHhDirectas,

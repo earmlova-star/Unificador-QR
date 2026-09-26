@@ -495,8 +495,26 @@ export const db = {
   // Tablas separadas de las de Documentos QR (add_partes_diarios.sql) —
   // comparten solo "usuarios" y "contratos". Ver ARQUITECTURA.md.
 
+  // Reserva de verdad el siguiente número (incrementa el contador atómico
+  // en secuencias_numero_parte) — llamar SOLO justo antes de crear el
+  // Daily Report, nunca para mostrarlo en pantalla mientras se llena el
+  // formulario (ver previsualizarSiguienteNumeroParte, y el bug de saltos
+  // de correlativo del 2026-09-26 causado por llamar esto al abrir el
+  // formulario).
   async obtenerSiguienteNumeroParte(contratoId: string): Promise<number> {
     const { data, error } = await supabase.rpc('obtener_siguiente_numero_parte', {
+      p_contrato_id: contratoId,
+    })
+    if (error) throw error
+    return data as number
+  },
+
+  // Solo LEE cuál sería el próximo número (sin reservarlo/incrementar nada)
+  // — para mostrarlo en el formulario mientras el usuario todavía no decide
+  // guardar. El número real se pide recién al guardar, con
+  // obtenerSiguienteNumeroParte.
+  async previsualizarSiguienteNumeroParte(contratoId: string): Promise<number> {
+    const { data, error } = await supabase.rpc('previsualizar_siguiente_numero_parte', {
       p_contrato_id: contratoId,
     })
     if (error) throw error
