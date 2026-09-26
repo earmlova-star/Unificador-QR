@@ -502,12 +502,6 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     )
   }
 
-  // N° de Equipos "de verdad" de un equipo: si tiene grupos, es la suma de
-  // sus cantidades (el campo N° Equipos pasa a ser de solo lectura) —
-  // mismo mecanismo que operativosEfectivos con cuadrillas.
-  const cantidadEfectiva = (fila: FilaMaquinaria): number =>
-    fila.grupos && fila.grupos.length > 0 ? sumar(fila.grupos.map((g) => g.cantidad)) : fila.cantidad
-
   // HM de un equipo en cada actividad = HH que dura la actividad × cantidad
   // de equipos de ese grupo participando — mismo mecanismo (y mismo motivo
   // para no reusar horasMaquinariaCalculadas acá: esa filtra actividades en
@@ -647,7 +641,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
           const gruposRealineados = f.grupos?.map((g) => ({ ...g, actividades: realinearActividadesCuadrilla(actividades, g.actividades) }))
           return {
             equipo: f.equipo,
-            cantidad: cantidadEfectiva(f),
+            cantidad: f.cantidad,
             mantencion: f.mantencion,
             standby: f.standby,
             horas_por_actividad:
@@ -1383,16 +1377,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
                         </div>
                       </td>
                       <td className="py-1 px-1">
-                        {tieneGrupos ? (
-                          <span
-                            title="Suma de las cantidades de los grupos de este equipo — ya no se tipea a mano."
-                            className="block text-right font-mono text-xs text-slate-500 px-2 py-1"
-                          >
-                            {cantidadEfectiva(fila)}
-                          </span>
-                        ) : (
-                          <input type="number" value={fila.cantidad || ''} onChange={(e) => actualizarMaquinaria(index, 'cantidad', e.target.value)} className={inputNumClase} />
-                        )}
+                        <input type="number" value={fila.cantidad || ''} onChange={(e) => actualizarMaquinaria(index, 'cantidad', e.target.value)} className={inputNumClase} />
                       </td>
                       <td className="py-1 px-1">
                         <input type="number" value={fila.mantencion || ''} onChange={(e) => actualizarMaquinaria(index, 'mantencion', e.target.value)} className={inputNumClase} />
@@ -1401,7 +1386,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
                         <input type="number" value={fila.standby || ''} onChange={(e) => actualizarMaquinaria(index, 'standby', e.target.value)} className={inputNumClase} />
                       </td>
                       <td className="py-1 px-1 text-right text-slate-400 font-mono text-xs">
-                        {cantidadEfectiva(fila) - fila.mantencion - fila.standby}
+                        {fila.cantidad - fila.mantencion - fila.standby}
                       </td>
                       {calcularHorasMaquinaria(fila).map((horas, actIndex) =>
                         tieneGrupos ? (
@@ -1484,7 +1469,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
               })}
               <tr className="border-t-2 border-slate-300 font-semibold text-slate-700">
                 <td className="py-1 pr-2">Total</td>
-                <td className="py-1 px-1 text-right">{sumar(maquinaria.map(cantidadEfectiva))}</td>
+                <td className="py-1 px-1 text-right">{sumar(maquinaria.map((f) => f.cantidad))}</td>
                 <td colSpan={3} />
                 <td colSpan={numActividades} />
                 <td className="py-1 pl-1 text-right">{totalHm}</td>
