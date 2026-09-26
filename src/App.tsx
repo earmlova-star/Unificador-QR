@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Login } from '@components/Auth/Login'
 import { Layout } from '@components/Layout/Layout'
 import { Inicio } from '@components/Inicio/Inicio'
+import { ErrorBoundary } from '@components/ErrorBoundary'
 import { Faena, Usuario, UserRole } from '@/types/index'
 import { auth, db } from '@lib/supabase'
 import { formatearCargo } from '@lib/formato'
@@ -159,6 +160,7 @@ export function App() {
         <Inicio usuario={usuario} contrato={contratoActivo} onNavigate={setActiveView} />
       )}
 
+      <ErrorBoundary key={activeView}>
       <Suspense fallback={<CargandoVista />}>
         {activeView === 'documentos' && <DocumentList usuario={usuario} contrato={contratoActivo} />}
 
@@ -190,6 +192,7 @@ export function App() {
             <OrganizadorTurnos usuario={usuario} />
           )}
       </Suspense>
+      </ErrorBoundary>
 
       {activeView === 'config' && (
         <div className="bg-white rounded-lg border border-slate-200 p-6">

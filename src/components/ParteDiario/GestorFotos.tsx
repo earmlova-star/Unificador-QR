@@ -44,9 +44,27 @@ export const GestorFotos = ({ fotos, onChange }: GestorFotosProps) => {
   const [porQuitar, setPorQuitar] = useState<number | null>(null)
 
   const [comprimiendo, setComprimiendo] = useState(false)
+  // Hallazgo QA 2026-09-25: comprimirArchivo deja pasar sin cambios
+  // cualquier archivo que no sea imagen (por diseño, para no romper si
+  // algún día se agregan PDFs) — pero acá nunca se validaba el tipo antes
+  // de aceptarlo, así que un archivo no-imagen (el `accept="image/*"` del
+  // input es solo una sugerencia de UI, no un filtro real) terminaba
+  // agregado con vista previa rota y, si el usuario no se daba cuenta,
+  // subido e insertado en el Excel como si fuera una foto real.
+  const [error, setError] = useState<string | null>(null)
 
   const agregarFotos = async (files: FileList | null) => {
     if (!files || files.length === 0) return
+
+    const seleccionados = Array.from(files)
+    const validos = seleccionados.filter((f) => f.type.startsWith('image/'))
+    const rechazados = seleccionados.length - validos.length
+    setError(
+      rechazados > 0
+        ? `${rechazados} archivo${rechazados === 1 ? '' : 's'} no ${rechazados === 1 ? 'es una imagen' : 'son imágenes'} y no se agregó${rechazados === 1 ? '' : 'n'}.`
+        : null
+    )
+    if (validos.length === 0) return
 
     // Se comprimen acá, al elegirlas, y no al guardar: así el usuario ve la
     // vista previa de inmediato y la subida posterior mueve ~350 kB por foto
@@ -55,7 +73,7 @@ export const GestorFotos = ({ fotos, onChange }: GestorFotosProps) => {
     setComprimiendo(true)
     try {
       const nuevas: FotoPendiente[] = await Promise.all(
-        Array.from(files).map(async (file) => {
+        validos.map(async (file) => {
           const comprimido = await comprimirArchivo(file, FOTO_TERRENO)
           return {
             file: comprimido,
@@ -149,6 +167,10 @@ export const GestorFotos = ({ fotos, onChange }: GestorFotosProps) => {
           className="hidden"
         />
       </label>
+
+      {error && (
+        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{error}</p>
+      )}
 
       {fotos.length > 0 && (
         <>

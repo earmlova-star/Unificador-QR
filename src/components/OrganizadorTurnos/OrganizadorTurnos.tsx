@@ -180,9 +180,13 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
     const objetivo = bloqueoGlobal ? cuadrillas : [cuadrilla]
     setError(null)
     try {
-      await Promise.all(
-        objetivo.map((c) => db.actualizarCuadrillaTurno(c.id, { fecha_inicio: sumarDias(c.fecha_inicio, deltaDias) }))
-      )
+      // Hallazgo QA 2026-09-25: con Promise.all (un actualizarCuadrillaTurno
+      // por cuadrilla) una falla parcial dejaba a las que sí tuvieron éxito
+      // movidas en la base pero SIN reflejarse en el estado local — un
+      // reintento del usuario las volvía a mover otra vez. Un solo RPC que
+      // mueve todas en una transacción no tiene ese estado intermedio: o se
+      // mueven todas, o ninguna.
+      await db.moverFechaCuadrillasTurno(objetivo.map((c) => c.id), deltaDias)
       setCuadrillas((prev) =>
         prev.map((c) => (objetivo.some((o) => o.id === c.id) ? { ...c, fecha_inicio: sumarDias(c.fecha_inicio, deltaDias) } : c))
       )

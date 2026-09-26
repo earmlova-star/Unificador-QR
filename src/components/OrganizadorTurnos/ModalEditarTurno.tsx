@@ -121,20 +121,21 @@ export const ModalEditarTurno = ({ cuadrilla, configuraciones, onCerrar, onGuard
         const o = original.find((x) => x.id === t.id)
         return o && (o.nombre !== t.nombre || o.apellido !== t.apellido || o.rut !== t.rut || o.cargo !== t.cargo)
       })
-      await Promise.all(
-        cambiosTrabajadores.map((t) => db.actualizarTrabajadorCuadrilla(t.id, { nombre: t.nombre, apellido: t.apellido, rut: t.rut, cargo: t.cargo }))
-      )
 
-      const actualizada = await db.actualizarCuadrillaTurno(cuadrilla.id, {
-        nombre: nombre.trim(),
-        patron_dias_trabajo: diasTrabajo,
-        patron_dias_descanso: diasDescanso,
-        patron_incluye_subida: incluyeSubida,
-        fecha_inicio: fechaInicio,
-        color_tema: colorTemaId,
-        config_subida_id: configSubidaId || null,
-        config_bajada_id: configBajadaId || null,
-      })
+      const actualizada = await db.guardarEdicionCuadrillaTurno(
+        cuadrilla.id,
+        cambiosTrabajadores.map((t) => ({ id: t.id, nombre: t.nombre, apellido: t.apellido, rut: t.rut, cargo: t.cargo })),
+        {
+          nombre: nombre.trim(),
+          patron_dias_trabajo: diasTrabajo,
+          patron_dias_descanso: diasDescanso,
+          patron_incluye_subida: incluyeSubida,
+          fecha_inicio: fechaInicio,
+          color_tema: colorTemaId,
+          config_subida_id: configSubidaId || null,
+          config_bajada_id: configBajadaId || null,
+        }
+      )
 
       onGuardado({ ...actualizada, trabajadores } as CuadrillaTurno)
     } catch (err) {

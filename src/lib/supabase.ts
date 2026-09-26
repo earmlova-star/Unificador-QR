@@ -162,6 +162,68 @@ export const storage = {
 
 // ============ DATABASE HELPERS ============
 
+// Hallazgo QA 2026-09-25: recalcularAcumuladosFaenaSinBloqueo (más abajo)
+// lee y reescribe la cadena de acumulados de una faena entera sin ningún
+// bloqueo — dos guardados casi simultáneos de la misma faena disparaban dos
+// recálculos en paralelo que se pisaban entre sí. adquirir_bloqueo_recalculo_faena
+// es un upsert atómico con TTL (ver add_bloqueo_recalculo_faena.sql); si ya
+// está tomado, se reintenta con backoff antes de rendirse.
+async function esperarBloqueoRecalculoFaena(contratoId: string, faena: Faena): Promise<void> {
+  const intentosMax = 8
+  let esperaMs = 250
+  for (let intento = 0; intento < intentosMax; intento++) {
+    const { data, error } = await supabase.rpc('adquirir_bloqueo_recalculo_faena', {
+      p_contrato_id: contratoId,
+      p_faena: faena,
+      p_ttl_segundos: 30,
+    })
+    if (error) throw error
+    if (data === true) return
+    await new Promise((resolve) => setTimeout(resolve, esperaMs))
+    esperaMs = Math.min(esperaMs * 2, 4000)
+  }
+  throw new Error(
+    'No se pudo recalcular los acumulados: otra persona está guardando un Daily Report de esta faena justo ahora. Intenta de nuevo en unos segundos.'
+  )
+}
+
+async function recalcularAcumuladosFaenaSinBloqueo(contratoId: string, faena: Faena) {
+  const { data, error } = await supabase
+    .from('partes_diarios')
+    .select('id, mano_obra_directa, mano_obra_indirecta, maquinaria, hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
+    .eq('contrato_id', contratoId)
+    .eq('faena', faena)
+    .order('numero_reporte', { ascending: true })
+
+  if (error) throw error
+  if (!data || data.length === 0) return
+
+  const reales = data.map((p) => calcularHHReales(p, faena))
+  const cadena = acumularCadena(reales)
+
+  for (let i = 0; i < data.length; i++) {
+    const p = data[i]
+    const acc = cadena[i]
+    const sinCambios =
+      (p.hh_directas_acumuladas ?? 0) === acc.directas &&
+      (p.hm_acumuladas ?? 0) === acc.hm &&
+      (p.hh_indirectas_acumuladas ?? 0) === acc.indirectas
+
+    if (sinCambios) continue
+
+    const { error: errorUpdate } = await supabase
+      .from('partes_diarios')
+      .update({
+        hh_directas_acumuladas: acc.directas,
+        hm_acumuladas: acc.hm,
+        hh_indirectas_acumuladas: acc.indirectas,
+      })
+      .eq('id', p.id)
+
+    if (errorUpdate) throw errorUpdate
+  }
+}
+
 export const db = {
   // Devuelve la siguiente secuencia diaria (1, 2, 3...) para nombrar PDFs,
   // única entre TODOS los usuarios que suban documentos ese día para ese contrato.
@@ -485,38 +547,15 @@ export const db = {
   // propaga el cambio a todo lo que viene después automáticamente. Ver
   // ParteDiarioForm.tsx (guardar()) y calculosHH.ts (acumularCadena).
   async recalcularAcumuladosFaena(contratoId: string, faena: Faena) {
-    const { data, error } = await supabase
-      .from('partes_diarios')
-      .select('id, mano_obra_directa, mano_obra_indirecta, maquinaria, hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
-      .eq('contrato_id', contratoId)
-      .eq('faena', faena)
-      .order('numero_reporte', { ascending: true })
-
-    if (error) throw error
-    if (!data || data.length === 0) return
-
-    const reales = data.map((p) => calcularHHReales(p, faena))
-    const cadena = acumularCadena(reales)
-
-    for (let i = 0; i < data.length; i++) {
-      const p = data[i]
-      const acc = cadena[i]
-      const sinCambios =
-        (p.hh_directas_acumuladas ?? 0) === acc.directas &&
-        (p.hm_acumuladas ?? 0) === acc.hm &&
-        (p.hh_indirectas_acumuladas ?? 0) === acc.indirectas
-      if (sinCambios) continue
-
-      const { error: errorUpdate } = await supabase
-        .from('partes_diarios')
-        .update({
-          hh_directas_acumuladas: acc.directas,
-          hm_acumuladas: acc.hm,
-          hh_indirectas_acumuladas: acc.indirectas,
-        })
-        .eq('id', p.id)
-
-      if (errorUpdate) throw errorUpdate
+    await esperarBloqueoRecalculoFaena(contratoId, faena)
+    try {
+      await recalcularAcumuladosFaenaSinBloqueo(contratoId, faena)
+    } finally {
+      const { error } = await supabase.rpc('liberar_bloqueo_recalculo_faena', {
+        p_contrato_id: contratoId,
+        p_faena: faena,
+      })
+      if (error) console.error('No se pudo liberar el bloqueo de recálculo de faena:', error)
     }
   },
 
@@ -540,6 +579,30 @@ export const db = {
       .single()
 
     if (error) throw error
+    return data
+  },
+
+  // Hallazgo QA 2026-09-25: actualizarParteDiario (arriba) es un UPDATE a
+  // ciegas — sin comparar el `estado` esperado, dos ediciones casi
+  // simultáneas del MISMO parte (dos coordinadores/apr con el mismo
+  // borrador abierto, o el mandante comentándolo mientras alguien más lo
+  // guarda) pueden pisarse el `estado` entre sí en silencio. Mismo patrón
+  // de bloqueo optimista que ya usa actualizarDocumentoSiEstado.
+  async actualizarParteDiarioSiEstado(id: string, estadoEsperado: string, updates: any) {
+    const { data, error } = await supabase
+      .from('partes_diarios')
+      .update(updates)
+      .eq('id', id)
+      .eq('estado', estadoEsperado)
+      .select()
+      .single()
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new Error('Este Daily Report ya fue actualizado por otra persona (o comentado por el mandante) — vuelve a abrirlo antes de guardar de nuevo.')
+      }
+      throw error
+    }
     return data
   },
 
@@ -888,9 +951,17 @@ export const db = {
     return data
   },
 
-  async actualizarCuadrillaTurno(
-    id: string,
-    cambios: Partial<{
+  // Guarda en una sola transacción los cambios de trabajadores y los
+  // campos propios de la cuadrilla (ver
+  // add_guardar_edicion_cuadrilla_turno_rpc.sql) — antes eran un
+  // Promise.all de N updates de trabajador + un update de cuadrilla
+  // aparte, y una falla a medio Promise.all dejaba trabajadores
+  // guardados sin que la cuadrilla se actualizara, con un solo error
+  // genérico que no reflejaba ese estado intermedio.
+  async guardarEdicionCuadrillaTurno(
+    cuadrillaId: string,
+    trabajadores: Array<{ id: string; nombre: string; apellido: string; rut: string; cargo: string }>,
+    cambios: {
       nombre: string
       patron_dias_trabajo: number
       patron_dias_descanso: number
@@ -899,15 +970,20 @@ export const db = {
       color_tema: string
       config_subida_id: string | null
       config_bajada_id: string | null
-    }>
+    }
   ) {
-    const { data, error } = await supabase
-      .from('cuadrillas_turno')
-      .update({ ...cambios, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single()
-
+    const { data, error } = await supabase.rpc('guardar_edicion_cuadrilla_turno', {
+      p_cuadrilla_id: cuadrillaId,
+      p_trabajadores: trabajadores,
+      p_nombre: cambios.nombre,
+      p_patron_dias_trabajo: cambios.patron_dias_trabajo,
+      p_patron_dias_descanso: cambios.patron_dias_descanso,
+      p_patron_incluye_subida: cambios.patron_incluye_subida,
+      p_fecha_inicio: cambios.fecha_inicio,
+      p_color_tema: cambios.color_tema,
+      p_config_subida_id: cambios.config_subida_id,
+      p_config_bajada_id: cambios.config_bajada_id,
+    })
     if (error) throw error
     return data
   },
@@ -927,6 +1003,17 @@ export const db = {
   // conflicto, así que un payload con solo {id, orden} falla siempre.
   async reordenarCuadrillasTurno(idsEnOrden: string[]) {
     const { error } = await supabase.rpc('reordenar_cuadrillas_turno', { p_ids: idsEnOrden })
+    if (error) throw error
+  },
+
+  // Hallazgo QA 2026-09-25: mover varios turnos con Promise.all (un
+  // db.actualizarCuadrillaTurno por cuadrilla) podía fallar a medias — las
+  // que sí tuvieron éxito quedaban movidas en la base pero el estado local
+  // nunca se actualizaba, así que un reintento las volvía a mover. Un solo
+  // UPDATE de todas las filas en una transacción evita ese estado
+  // intermedio (ver add_mover_fecha_cuadrillas_turno_rpc.sql).
+  async moverFechaCuadrillasTurno(ids: string[], deltaDias: number) {
+    const { error } = await supabase.rpc('mover_fecha_cuadrillas_turno', { p_ids: ids, p_delta_dias: deltaDias })
     if (error) throw error
   },
 
@@ -951,18 +1038,6 @@ export const db = {
   // haciendo N round-trips secuenciales cuando la API acepta un array.
   async agregarTrabajadoresCuadrilla(trabajadores: { cuadrilla_id: string; nombre: string; apellido: string; rut: string; cargo: string }[]) {
     const { data, error } = await supabase.from('cuadrillas_turno_trabajadores').insert(trabajadores).select()
-    if (error) throw error
-    return data
-  },
-
-  async actualizarTrabajadorCuadrilla(id: string, cambios: Partial<{ nombre: string; apellido: string; rut: string; cargo: string }>) {
-    const { data, error } = await supabase
-      .from('cuadrillas_turno_trabajadores')
-      .update(cambios)
-      .eq('id', id)
-      .select()
-      .single()
-
     if (error) throw error
     return data
   },

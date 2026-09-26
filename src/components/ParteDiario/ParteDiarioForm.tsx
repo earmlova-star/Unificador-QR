@@ -692,7 +692,11 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         if (!estadoBloqueado) {
           updates.estado = estadoFinal
         }
-        parte = await db.actualizarParteDiario(parteExistente.id, updates)
+        // Bloqueo optimista contra el estado con el que se abrió este
+        // formulario (hallazgo QA 2026-09-25): si cambió mientras estaba
+        // abierto (otra persona lo guardó, o el mandante lo comentó), el
+        // UPDATE no aplica y se avisa en vez de pisarlo en silencio.
+        parte = await db.actualizarParteDiarioSiEstado(parteExistente.id, parteExistente.estado, updates)
       } else {
         // hh_*_acumuladas acá es solo un valor inicial razonable (por si
         // recalcularAcumuladosFaena de abajo llegara a fallar después de
@@ -804,7 +808,16 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
       const parteCompleto = await db.obtenerParteDiario(parte.id)
       setParteGuardada(parteCompleto as ParteDiario)
     } catch (err) {
-      setError(traducirError(err, 'No se pudo guardar el Daily Report'))
+      // El bloqueo optimista (actualizarParteDiarioSiEstado) lanza un
+      // Error normal con un mensaje ya pensado para mostrarse tal cual —
+      // traducirError lo reemplazaría por el genérico al no matchear
+      // ningún patrón conocido (mismo criterio que ya usa DocumentList.tsx
+      // con "ya fue actualizado").
+      const msg =
+        err instanceof Error && err.message.includes('ya fue actualizado por otra persona')
+          ? err.message
+          : traducirError(err, 'No se pudo guardar el Daily Report')
+      setError(msg)
     } finally {
       setIsSaving(null)
     }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { calcularHHReales } from '@lib/calculosHH'
+import { formatearFechaCorta } from '@lib/formato'
 import { Faena, FAENA_LABELS, ParteDiario, ParteDiarioEstado, Usuario } from '@/types/index'
 import { ParteDiarioForm } from './ParteDiarioForm'
 import { ParteDiarioDetalle } from './ParteDiarioDetalle'
@@ -28,6 +29,8 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
   const [parteAEditar, setParteAEditar] = useState<ParteDiario | null>(null)
   const [parteSeleccionado, setParteSeleccionado] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
   const [pagina, setPagina] = useState(1)
 
   const cargarPartes = async () => {
@@ -49,12 +52,12 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contrato?.id])
 
-  // Cambiar de faena activa o de texto de búsqueda vuelve a la página 1 —
-  // si no, se puede quedar viendo una página vacía que solo tenía sentido
-  // para el filtro anterior.
+  // Cambiar de faena activa, texto de búsqueda o rango de fecha vuelve a la
+  // página 1 — si no, se puede quedar viendo una página vacía que solo
+  // tenía sentido para el filtro anterior.
   useEffect(() => {
     setPagina(1)
-  }, [faenaActiva, busqueda])
+  }, [faenaActiva, busqueda, fechaDesde, fechaHasta])
 
   const eliminarParte = async (parte: ParteDiario) => {
     if (!window.confirm(`¿Eliminar el Daily Report N° ${String(parte.numero_reporte).padStart(3, '0')}? Esta acción no se puede deshacer.`)) {
@@ -70,15 +73,25 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
 
   const partesDeLaFaena = useMemo(() => partes.filter((p) => p.faena === faenaActiva), [partes, faenaActiva])
 
+  // Rango de fecha (sobre parte.fecha, YYYY-MM-DD — comparable como texto)
+  // que acota tanto los KPIs de HH acumuladas como la tabla de abajo. Vacío
+  // en cualquiera de los dos extremos = sin límite en ese lado.
+  const partesEnRango = useMemo(() => {
+    if (!fechaDesde && !fechaHasta) return partesDeLaFaena
+    return partesDeLaFaena.filter(
+      (p) => (!fechaDesde || p.fecha >= fechaDesde) && (!fechaHasta || p.fecha <= fechaHasta)
+    )
+  }, [partesDeLaFaena, fechaDesde, fechaHasta])
+
   const partesFiltrados = useMemo(() => {
     const texto = busqueda.trim().toLowerCase()
-    if (!texto) return partesDeLaFaena
-    return partesDeLaFaena.filter(
+    if (!texto) return partesEnRango
+    return partesEnRango.filter(
       (p) =>
         String(p.numero_reporte).padStart(3, '0').includes(texto) ||
         (p.usuario_creador?.nombre ?? '').toLowerCase().includes(texto)
     )
-  }, [partesDeLaFaena, busqueda])
+  }, [partesEnRango, busqueda])
 
   const totalPaginas = Math.max(1, Math.ceil(partesFiltrados.length / POR_PAGINA))
   const partesPagina = useMemo(
@@ -86,32 +99,33 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
     [partesFiltrados, pagina]
   )
 
-  // Los 4 KPIs se calculan sobre TODOS los reportes de la faena activa (no
-  // sobre la página actual) — son un resumen de la faena, no de lo que se
-  // está viendo en pantalla en este momento.
+  // Los 4 KPIs se calculan sobre TODOS los reportes de la faena activa
+  // dentro del rango de fecha elegido (no sobre la página actual, ni
+  // acotados por la búsqueda de texto) — son un resumen del rango, no de lo
+  // que se está viendo en pantalla en este momento.
   const kpis = useMemo(() => {
-    const reales = partesDeLaFaena.map((p) => calcularHHReales(p, p.faena))
+    const reales = partesEnRango.map((p) => calcularHHReales(p, p.faena))
     const totalDirectas = reales.reduce((acc, r) => acc + r.directas, 0)
     const totalHm = reales.reduce((acc, r) => acc + r.hm, 0)
     const totalIndirectas = reales.reduce((acc, r) => acc + r.indirectas, 0)
     const totalHH = totalDirectas + totalHm + totalIndirectas
 
     const equiposConHoras = new Set(
-      partesDeLaFaena.flatMap((p) => p.maquinaria.filter((m) => (m.horas_por_actividad ?? []).some((h) => (h || 0) > 0)).map((m) => m.equipo))
+      partesEnRango.flatMap((p) => p.maquinaria.filter((m) => (m.horas_por_actividad ?? []).some((h) => (h || 0) > 0)).map((m) => m.equipo))
     ).size
 
-    const totalProgramado = partesDeLaFaena.reduce(
+    const totalProgramado = partesEnRango.reduce(
       (acc, p) => acc + (p.hh_directas_programado ?? 0) + (p.hh_indirectas_programado ?? 0),
       0
     )
     const totalRealDirIndir = totalDirectas + totalIndirectas
     const cumplimiento = totalProgramado > 0 ? (totalRealDirIndir / totalProgramado) * 100 : 0
 
-    const enviados = partesDeLaFaena.filter((p) => p.estado === ParteDiarioEstado.ENVIADO).length
-    const borradores = partesDeLaFaena.filter((p) => p.estado === ParteDiarioEstado.BORRADOR).length
+    const enviados = partesEnRango.filter((p) => p.estado === ParteDiarioEstado.ENVIADO).length
+    const borradores = partesEnRango.filter((p) => p.estado === ParteDiarioEstado.BORRADOR).length
 
     return { totalHH, totalDirectas, totalIndirectas, totalHm, equiposConHoras, cumplimiento, enviados, borradores }
-  }, [partesDeLaFaena])
+  }, [partesEnRango])
 
   if (!contrato?.id) {
     return (
@@ -181,6 +195,15 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{error}</div>
       )}
 
+      {!isLoading && partesDeLaFaena.length > 0 && (fechaDesde || fechaHasta) && (
+        <p className="text-xs text-blue-600">
+          Mostrando HH acumuladas {fechaDesde ? `desde el ${formatearFechaCorta(fechaDesde)}` : 'desde el inicio'}
+          {' '}
+          {fechaHasta ? `hasta el ${formatearFechaCorta(fechaHasta)}` : 'hasta hoy'} · {partesEnRango.length} reporte
+          {partesEnRango.length === 1 ? '' : 's'}.
+        </p>
+      )}
+
       {!isLoading && partesDeLaFaena.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
@@ -215,6 +238,10 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
       <FilterToolbar
         query={busqueda}
         onQueryChange={setBusqueda}
+        fechaDesde={fechaDesde}
+        onFechaDesdeChange={setFechaDesde}
+        fechaHasta={fechaHasta}
+        onFechaHastaChange={setFechaHasta}
         pagina={pagina}
         totalPaginas={totalPaginas}
         onPaginaChange={setPagina}
