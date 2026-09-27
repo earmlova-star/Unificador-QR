@@ -6,6 +6,8 @@ import { Camioneta, DocumentoVencimiento, Usuario } from '@/types/index'
 import { agruparVencimientosPorMes, VencimientoConUrgencia } from './lib/urgencia'
 import { ModalAgregarCamioneta } from './ModalAgregarCamioneta'
 import { ModalAgregarVencimiento, FuncionarioOption } from './ModalAgregarVencimiento'
+import { ModalEditarFechaVencimiento } from './ModalEditarFechaVencimiento'
+import { ModalObservacionVencimiento } from './ModalObservacionVencimiento'
 
 interface VencimientosProps {
   usuario: Usuario
@@ -31,6 +33,12 @@ function etiquetaDias(dias: number): string {
   return `Vence en ${dias} día${dias === 1 ? '' : 's'}`
 }
 
+function etiquetaSujeto(item: DocumentoVencimiento): string {
+  if (item.funcionario) return `${item.funcionario.nombre} ${item.funcionario.apellido} — ${item.funcionario.rut}`
+  if (item.camioneta) return item.camioneta.patente
+  return '—'
+}
+
 // Módulo "Control de Vencimientos" — pedido explícito 2026-09-27. Rastrea
 // documentos con fecha de vencimiento (licencia, examen ocupacional,
 // revisión técnica, SOAP…) de dos tipos de entidad: funcionarios (mismo
@@ -47,6 +55,27 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
   const [mostrarModalVencimiento, setMostrarModalVencimiento] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
   const [filtro, setFiltro] = useState<FiltroTipo>('todos')
+
+  // Menú contextual (clic derecho en escritorio, mantener presionado en
+  // celular — el navegador ya traduce el long-press a "contextmenu") sobre
+  // la celda de Sujeto/Identificador de cada fila.
+  const [menuContextual, setMenuContextual] = useState<{ documento: DocumentoVencimiento; x: number; y: number } | null>(null)
+  const [documentoEditandoFecha, setDocumentoEditandoFecha] = useState<DocumentoVencimiento | null>(null)
+  const [documentoEditandoObservacion, setDocumentoEditandoObservacion] = useState<DocumentoVencimiento | null>(null)
+
+  useEffect(() => {
+    if (!menuContextual) return
+    const cerrar = () => setMenuContextual(null)
+    const alPresionarTecla = (e: KeyboardEvent) => { if (e.key === 'Escape') cerrar() }
+    window.addEventListener('click', cerrar)
+    window.addEventListener('scroll', cerrar, true)
+    window.addEventListener('keydown', alPresionarTecla)
+    return () => {
+      window.removeEventListener('click', cerrar)
+      window.removeEventListener('scroll', cerrar, true)
+      window.removeEventListener('keydown', alPresionarTecla)
+    }
+  }, [menuContextual])
 
   const cargar = async () => {
     setCargando(true)
@@ -106,6 +135,13 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
     } catch (err) {
       setError(traducirError(err, 'No se pudo eliminar la camioneta'))
     }
+  }
+
+  // actualizarDocumentoVencimiento no vuelve a traer el join de
+  // funcionario/camioneta (no lo necesita para guardar) — se conserva el
+  // que ya estaba en el estado, mezclándolo con la fila actualizada.
+  const actualizarDocumentoEnEstado = (actualizado: DocumentoVencimiento) => {
+    setDocumentos((prev) => prev.map((d) => (d.id === actualizado.id ? { ...d, ...actualizado } : d)))
   }
 
   return (
@@ -221,7 +257,13 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
                           <td className="py-3 pl-4 pr-1 align-top">
                             <span className={`inline-block w-2.5 h-2.5 rounded-full shadow-sm mt-1 ${estilo.punto}`} />
                           </td>
-                          <td className="py-3 px-3 align-top">
+                          <td
+                            className="py-3 px-3 align-top cursor-context-menu"
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              setMenuContextual({ documento: item, x: e.clientX, y: e.clientY })
+                            }}
+                          >
                             {item.funcionario ? (
                               <>
                                 <div className="font-semibold text-slate-900 leading-snug">
@@ -232,6 +274,12 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
                             ) : (
                               <div className="font-semibold text-slate-900 tracking-wide font-mono text-xs">
                                 {item.camioneta?.patente}
+                              </div>
+                            )}
+                            {item.observacion && (
+                              <div className="flex items-start gap-1 mt-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                <span>📝</span>
+                                <span className="truncate">{item.observacion}</span>
                               </div>
                             )}
                           </td>
@@ -286,6 +334,59 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
           onCreado={() => {
             setMostrarModalVencimiento(false)
             cargar()
+          }}
+        />
+      )}
+
+      {menuContextual && (
+        <div
+          className="fixed bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1 min-w-[220px]"
+          style={{ top: menuContextual.y, left: menuContextual.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setDocumentoEditandoFecha(menuContextual.documento)
+              setMenuContextual(null)
+            }}
+            className="w-full text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            📅 Editar fecha de vencimiento
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDocumentoEditandoObservacion(menuContextual.documento)
+              setMenuContextual(null)
+            }}
+            className="w-full text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            📝 Agregar observación
+          </button>
+        </div>
+      )}
+
+      {documentoEditandoFecha && (
+        <ModalEditarFechaVencimiento
+          documento={documentoEditandoFecha}
+          etiquetaSujeto={etiquetaSujeto(documentoEditandoFecha)}
+          onCerrar={() => setDocumentoEditandoFecha(null)}
+          onActualizado={(actualizado) => {
+            actualizarDocumentoEnEstado(actualizado)
+            setDocumentoEditandoFecha(null)
+          }}
+        />
+      )}
+
+      {documentoEditandoObservacion && (
+        <ModalObservacionVencimiento
+          documento={documentoEditandoObservacion}
+          etiquetaSujeto={etiquetaSujeto(documentoEditandoObservacion)}
+          onCerrar={() => setDocumentoEditandoObservacion(null)}
+          onActualizado={(actualizado) => {
+            actualizarDocumentoEnEstado(actualizado)
+            setDocumentoEditandoObservacion(null)
           }}
         />
       )}

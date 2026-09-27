@@ -1273,7 +1273,10 @@ export const db = {
     return data
   },
 
-  async actualizarDocumentoVencimiento(id: string, cambios: Partial<{ nombre_documento: string; fecha_vencimiento: string }>) {
+  async actualizarDocumentoVencimiento(
+    id: string,
+    cambios: Partial<{ nombre_documento: string; fecha_vencimiento: string; observacion: string | null }>
+  ) {
     const { data, error } = await supabase
       .from('documentos_vencimiento')
       .update({ ...cambios, updated_at: new Date().toISOString() })

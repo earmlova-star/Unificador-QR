@@ -696,6 +696,12 @@ export interface DocumentoVencimiento {
   camioneta_id: string | null;
   nombre_documento: string;
   fecha_vencimiento: string;
+
+  // Se borra sola en cuanto fecha_vencimiento cambia (trigger en la base,
+  // ver add_observacion_documentos_vencimiento.sql) — una nota vieja atada
+  // a una fecha que ya no es la vigente deja de tener sentido.
+  observacion?: string | null;
+
   creado_por: string;
   created_at: string;
   updated_at: string;
