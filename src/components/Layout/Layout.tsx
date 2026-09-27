@@ -83,7 +83,7 @@ export const Layout = ({
   }
 
   return (
-    <div className="min-h-screen md:h-screen bg-slate-50 md:flex">
+    <div className="min-h-dvh md:h-dvh bg-slate-50 md:flex">
       {/* Fondo oscuro detrás del panel en celular */}
       {menuMovilAbierto && (
         <div
@@ -97,7 +97,7 @@ export const Layout = ({
           con margin-left. En celular queda fuera de pantalla y entra
           deslizándose solo cuando se abre. */}
       <div
-        className={`${navExpanded ? 'md:w-64' : 'md:w-20'} w-64 fixed inset-y-0 left-0 z-40 h-screen bg-slate-900 text-white flex flex-col transition-transform md:transition-all duration-200
+        className={`${navExpanded ? 'md:w-64' : 'md:w-20'} w-64 fixed inset-y-0 left-0 z-40 h-dvh bg-slate-900 text-white flex flex-col transition-transform md:transition-all duration-200
           ${menuMovilAbierto ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
       >
         {/* Encabezado del sidebar: marca + selector de faena activa. El
@@ -157,8 +157,12 @@ export const Layout = ({
           </svg>
         </button>
 
-        {/* Nav items */}
-        <nav className="flex-1 space-y-1 px-2 py-4">
+        {/* Nav items. min-h-0 es necesario para que overflow-y-auto realmente
+            recorte: sin él, un flex item con flex-1 igual crece hasta el
+            alto de su contenido (min-height: auto implícito de flexbox),
+            empujando "Cerrar sesión" fuera de la pantalla en vez de dejar
+            que sea esta lista la que scrollee internamente. */}
+        <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 px-2 py-4">
           <NavItem
             icon={<IconInicio />}
             label="Inicio"
