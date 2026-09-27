@@ -11,10 +11,10 @@ interface VencimientosProps {
   usuario: Usuario
 }
 
-const ESTILO_URGENCIA: Record<VencimientoConUrgencia['urgencia'], { punto: string; fila: string; texto: string }> = {
-  critico: { punto: '🔴', fila: 'bg-red-50', texto: 'text-red-700' },
-  alerta: { punto: '🟡', fila: 'bg-amber-50', texto: 'text-amber-700' },
-  normal: { punto: '🔵', fila: 'bg-white', texto: 'text-slate-500' },
+const ESTILO_URGENCIA: Record<VencimientoConUrgencia['urgencia'], { punto: string; texto: string }> = {
+  critico: { punto: 'bg-rose-500', texto: 'text-rose-600' },
+  alerta: { punto: 'bg-amber-500', texto: 'text-amber-600' },
+  normal: { punto: 'bg-blue-500', texto: 'text-slate-500' },
 }
 
 function etiquetaDias(dias: number): string {
@@ -93,13 +93,6 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
     }
   }
 
-  const nombreEntidad = (item: DocumentoVencimiento) =>
-    item.funcionario
-      ? `${item.funcionario.nombre} ${item.funcionario.apellido} — ${item.funcionario.rut}`
-      : item.camioneta
-        ? `${item.camioneta.patente}${item.camioneta.modelo ? ` — ${item.camioneta.modelo}` : ''}`
-        : '—'
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -161,40 +154,72 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
       ) : (
         <div className="space-y-4">
           {grupos.map((grupo) => (
-            <div key={grupo.mesAnio} className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-              <div className="bg-slate-50 border-b border-slate-200 px-4 py-2">
-                <h3 className="text-sm font-bold text-slate-700">{grupo.etiqueta}</h3>
+            <div key={grupo.mesAnio} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                <h3 className="text-base font-semibold text-slate-900 tracking-tight">{grupo.etiqueta}</h3>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                  {grupo.items.length} registro{grupo.items.length === 1 ? '' : 's'}
+                </span>
               </div>
-              <div className="divide-y divide-slate-100">
-                {grupo.items.map((item) => {
-                  const estilo = ESTILO_URGENCIA[item.urgencia]
-                  return (
-                    <div key={item.id} className={`flex items-center justify-between gap-3 px-4 py-3 ${estilo.fila}`}>
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-lg flex-shrink-0">{estilo.punto}</span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900 truncate">{item.nombre_documento}</p>
-                          <p className="text-xs text-slate-500 truncate">{nombreEntidad(item)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <div className="text-right">
-                          <p className="text-sm text-slate-700">{formatearFechaCorta(item.fecha_vencimiento)}</p>
-                          <p className={`text-xs font-medium ${estilo.texto}`}>{etiquetaDias(item.dias)}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => eliminarVencimiento(item.id)}
-                          disabled={eliminandoId === item.id}
-                          className="text-red-600 hover:text-red-700 text-sm disabled:opacity-50"
-                          title="Eliminar vencimiento"
-                        >
-                          🗑
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-rose-50/50 text-[11px] font-semibold text-slate-500 tracking-wider uppercase border-b border-rose-100/60">
+                      <th scope="col" className="py-2.5 pl-4 pr-1 w-6"></th>
+                      <th scope="col" className="py-2.5 px-3">Sujeto / Identificador</th>
+                      <th scope="col" className="py-2.5 px-3">Trámite</th>
+                      <th scope="col" className="py-2.5 px-3">Vencimiento</th>
+                      <th scope="col" className="py-2.5 pr-4 pl-1 text-right w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-100/40 bg-white">
+                    {grupo.items.map((item) => {
+                      const estilo = ESTILO_URGENCIA[item.urgencia]
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3 pl-4 pr-1 align-top">
+                            <span className={`inline-block w-2.5 h-2.5 rounded-full shadow-sm mt-1 ${estilo.punto}`} />
+                          </td>
+                          <td className="py-3 px-3 align-top">
+                            {item.funcionario ? (
+                              <>
+                                <div className="font-semibold text-slate-900 leading-snug">
+                                  {item.funcionario.nombre} {item.funcionario.apellido}
+                                </div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">{item.funcionario.rut}</div>
+                              </>
+                            ) : (
+                              <div className="font-semibold text-slate-900 tracking-wide font-mono text-xs">
+                                {item.camioneta?.patente}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 align-top">
+                            <span className="inline-block px-2 py-0.5 rounded border border-slate-200 bg-white text-slate-700 text-[11px] font-medium">
+                              {item.nombre_documento}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 align-top whitespace-nowrap">
+                            <div className="text-slate-700 font-medium">{formatearFechaCorta(item.fecha_vencimiento)}</div>
+                            <div className={`text-[11px] font-medium ${estilo.texto}`}>{etiquetaDias(item.dias)}</div>
+                          </td>
+                          <td className="py-3 pr-4 pl-1 align-top text-right">
+                            <button
+                              type="button"
+                              onClick={() => eliminarVencimiento(item.id)}
+                              disabled={eliminandoId === item.id}
+                              className="text-rose-400 hover:text-rose-600 p-1 transition-colors disabled:opacity-50"
+                              title="Eliminar vencimiento"
+                            >
+                              🗑
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           ))}
