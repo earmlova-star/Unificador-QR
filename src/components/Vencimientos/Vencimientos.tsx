@@ -11,6 +11,14 @@ interface VencimientosProps {
   usuario: Usuario
 }
 
+type FiltroTipo = 'todos' | 'funcionario' | 'camioneta'
+
+const OPCIONES_FILTRO: { valor: FiltroTipo; etiqueta: string }[] = [
+  { valor: 'todos', etiqueta: 'Todos' },
+  { valor: 'funcionario', etiqueta: 'Funcionario' },
+  { valor: 'camioneta', etiqueta: 'Camioneta' },
+]
+
 const ESTILO_URGENCIA: Record<VencimientoConUrgencia['urgencia'], { punto: string; texto: string }> = {
   critico: { punto: 'bg-rose-500', texto: 'text-rose-600' },
   alerta: { punto: 'bg-amber-500', texto: 'text-amber-600' },
@@ -38,6 +46,7 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
   const [mostrarModalCamioneta, setMostrarModalCamioneta] = useState(false)
   const [mostrarModalVencimiento, setMostrarModalVencimiento] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
+  const [filtro, setFiltro] = useState<FiltroTipo>('todos')
 
   const cargar = async () => {
     setCargando(true)
@@ -66,7 +75,13 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
     cargar()
   }, [])
 
-  const grupos = useMemo(() => agruparVencimientosPorMes(documentos), [documentos])
+  const documentosFiltrados = useMemo(() => {
+    if (filtro === 'funcionario') return documentos.filter((d) => d.funcionario_id !== null)
+    if (filtro === 'camioneta') return documentos.filter((d) => d.camioneta_id !== null)
+    return documentos
+  }, [documentos, filtro])
+
+  const grupos = useMemo(() => agruparVencimientosPorMes(documentosFiltrados), [documentosFiltrados])
   const criticos = useMemo(() => grupos.reduce((acc, g) => acc + g.items.filter((i) => i.urgencia === 'critico').length, 0), [grupos])
 
   const eliminarVencimiento = async (id: string) => {
@@ -145,11 +160,36 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
         </div>
       )}
 
+      {!cargando && documentos.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-base font-semibold text-slate-900 tracking-tight">Vencimientos</h3>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">
+              {documentosFiltrados.length} registro{documentosFiltrados.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="inline-flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200/60 text-xs self-start sm:self-auto">
+            {OPCIONES_FILTRO.map((opcion) => (
+              <button
+                key={opcion.valor}
+                type="button"
+                onClick={() => setFiltro(opcion.valor)}
+                className={`px-3 py-1 rounded-md font-medium text-xs transition-all ${
+                  filtro === opcion.valor ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {opcion.etiqueta}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {cargando ? (
         <div className="bg-white rounded-lg border border-slate-200 p-6 text-sm text-slate-500">Cargando…</div>
       ) : grupos.length === 0 ? (
         <div className="bg-white rounded-lg border border-slate-200 p-6 text-sm text-slate-500">
-          No hay vencimientos registrados todavía.
+          {documentos.length === 0 ? 'No hay vencimientos registrados todavía.' : 'No hay vencimientos para este filtro.'}
         </div>
       ) : (
         <div className="space-y-4">
