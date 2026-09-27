@@ -563,7 +563,12 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                             : `${cuadrilla.nombre} | ${seg.fecha} : ${seg.etiqueta}`
                         }
                       >
-                        {seg.tipo === 'SUBIDA' && '▲'}
+                        {seg.tipo === 'SUBIDA' && (
+                          <span className="flex flex-col items-center leading-[1.1]">
+                            <span>D0</span>
+                            <span>▲</span>
+                          </span>
+                        )}
                         {seg.tipo === 'BAJADA' && (
                           <span className="flex flex-col items-center leading-[1.1]">
                             <span>{seg.etiqueta.replace('Día ', 'D')}</span>
