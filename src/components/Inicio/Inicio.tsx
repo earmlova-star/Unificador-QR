@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { db, type FiltrosDocumentos } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { DocumentStatus, ParteDiarioEstado, UserRole, Usuario } from '@/types/index'
+import { DocumentStatus, DocumentoVencimiento, ParteDiarioEstado, UserRole, Usuario } from '@/types/index'
+import { calcularUrgencia } from '@components/Vencimientos/lib/urgencia'
 
 interface Conteos {
   docsPendientes: number
@@ -10,12 +11,13 @@ interface Conteos {
   partesEnviados: number
   partesComentados: number
   partesTotal: number
+  vencimientosCriticos: number
 }
 
 interface InicioProps {
   usuario: Usuario
   contrato: any
-  onNavigate: (vista: 'documentos' | 'parte-diario') => void
+  onNavigate: (vista: 'documentos' | 'parte-diario' | 'vencimientos') => void
 }
 
 interface Tarjeta {
@@ -45,12 +47,14 @@ export const Inicio = ({ usuario, contrato, onNavigate }: InicioProps) => {
     partesEnviados: 0,
     partesComentados: 0,
     partesTotal: 0,
+    vencimientosCriticos: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const veDocumentos = usuario.rol !== UserRole.MANDANTE
   const veDailyReport = usuario.rol !== UserRole.SUPERVISOR
+  const veVencimientos = usuario.rol === UserRole.COORDINADOR
 
   useEffect(() => {
     cargar()
@@ -72,8 +76,9 @@ export const Inicio = ({ usuario, contrato, onNavigate }: InicioProps) => {
         ...(usuario.rol === UserRole.COORDINADOR ? {} : { creado_por: usuario.id }),
       }
       const cero = Promise.resolve(0)
+      const sinVencimientos: DocumentoVencimiento[] = []
 
-      const [docsPendientes, docsTotal, partesBorrador, partesEnviados, partesComentados, partesTotal] =
+      const [docsPendientes, docsTotal, partesBorrador, partesEnviados, partesComentados, partesTotal, vencimientos] =
         await Promise.all([
           veDocumentos ? db.contarDocumentos({ ...base, estado: DocumentStatus.PENDIENTE }) : cero,
           veDocumentos ? db.contarDocumentos(base) : cero,
@@ -81,9 +86,14 @@ export const Inicio = ({ usuario, contrato, onNavigate }: InicioProps) => {
           veDailyReport ? db.contarPartesDiarios(contrato.id, ParteDiarioEstado.ENVIADO) : cero,
           veDailyReport ? db.contarPartesDiarios(contrato.id, ParteDiarioEstado.COMENTADO_MANDANTE) : cero,
           veDailyReport ? db.contarPartesDiarios(contrato.id) : cero,
+          veVencimientos ? db.obtenerDocumentosVencimiento() : Promise.resolve(sinVencimientos),
         ])
 
-      setConteos({ docsPendientes, docsTotal, partesBorrador, partesEnviados, partesComentados, partesTotal })
+      const vencimientosCriticos = (vencimientos as DocumentoVencimiento[]).filter(
+        (v) => calcularUrgencia(v.fecha_vencimiento) === 'critico'
+      ).length
+
+      setConteos({ docsPendientes, docsTotal, partesBorrador, partesEnviados, partesComentados, partesTotal, vencimientosCriticos })
     } catch (err) {
       setError(traducirError(err, 'No se pudo cargar el resumen'))
     } finally {
@@ -95,7 +105,7 @@ export const Inicio = ({ usuario, contrato, onNavigate }: InicioProps) => {
     return <div className="bg-white rounded-lg border border-slate-200 p-6 text-sm text-slate-500">Cargando…</div>
   }
 
-  const { docsPendientes, docsTotal, partesBorrador, partesEnviados, partesComentados, partesTotal } = conteos
+  const { docsPendientes, docsTotal, partesBorrador, partesEnviados, partesComentados, partesTotal, vencimientosCriticos } = conteos
 
   const tarjetas: Tarjeta[] = []
 
@@ -146,6 +156,17 @@ export const Inicio = ({ usuario, contrato, onNavigate }: InicioProps) => {
         destacar: partesBorrador > 0,
       })
     }
+  }
+
+  if (veVencimientos) {
+    tarjetas.push({
+      label: 'Vencimientos críticos',
+      valor: vencimientosCriticos,
+      detalle: 'Vencidos o por vencer en 7 días',
+      icon: '🔴',
+      onClick: () => onNavigate('vencimientos'),
+      destacar: vencimientosCriticos > 0,
+    })
   }
 
   return (

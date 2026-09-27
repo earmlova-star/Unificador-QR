@@ -17,6 +17,7 @@ import {
   IconReloj,
   IconReporte,
   IconUsuario,
+  IconVencimientos,
 } from './Icons'
 
 type Vista =
@@ -30,6 +31,7 @@ type Vista =
   | 'bodega'
   | 'entrega-turno'
   | 'organizador-turnos'
+  | 'vencimientos'
 
 interface LayoutProps {
   usuario: Usuario | null
@@ -257,6 +259,19 @@ export const Layout = ({
               label="Organizador de Turnos"
               active={activeView === 'organizador-turnos'}
               onClick={() => irA('organizador-turnos')}
+              expanded={navExpanded || menuMovilAbierto}
+            />
+          )}
+
+          {/* Control de Vencimientos: licencias/exámenes de funcionarios y
+              documentos de camionetas (ver add_control_vencimientos.sql).
+              Pedido explícito 2026-09-27 — solo coordinador. */}
+          {usuario?.rol === UserRole.COORDINADOR && (
+            <NavItem
+              icon={<IconVencimientos />}
+              label="Control de Vencimientos"
+              active={activeView === 'vencimientos'}
+              onClick={() => irA('vencimientos')}
               expanded={navExpanded || menuMovilAbierto}
             />
           )}

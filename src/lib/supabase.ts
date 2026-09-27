@@ -1209,4 +1209,84 @@ export const db = {
     if (error) throw error
     return data
   },
+
+  // ---------- Control de Vencimientos ----------
+  // Ver add_control_vencimientos.sql. "Funcionario" reutiliza el mismo
+  // listado de trabajadores de Organizador de Turnos — no hay tabla de
+  // funcionarios propia de este módulo.
+
+  async obtenerCamionetas() {
+    const { data, error } = await supabase.from('camionetas').select('*').order('patente', { ascending: true })
+    if (error) throw error
+    return data
+  },
+
+  async crearCamioneta(camioneta: { patente: string; modelo: string | null; creado_por: string }) {
+    const { data, error } = await supabase.from('camionetas').insert([camioneta]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  async actualizarCamioneta(id: string, cambios: Partial<{ patente: string; modelo: string | null }>) {
+    const { data, error } = await supabase
+      .from('camionetas')
+      .update({ ...cambios, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  async eliminarCamioneta(id: string) {
+    // documentos_vencimiento.camioneta_id tiene "on delete cascade": borrar
+    // la camioneta borra sus documentos de vencimiento automáticamente.
+    const { error } = await supabase.from('camionetas').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  // Trae todos los vencimientos con el funcionario o la camioneta ya
+  // resueltos por join, para no hacer una consulta aparte por cada fila al
+  // mostrarlos (dashboard de Inicio y el listado del módulo).
+  async obtenerDocumentosVencimiento() {
+    const { data, error } = await supabase
+      .from('documentos_vencimiento')
+      .select(
+        '*, funcionario:cuadrillas_turno_trabajadores(id, nombre, apellido, rut), camioneta:camionetas(id, patente, modelo)'
+      )
+      .order('fecha_vencimiento', { ascending: true })
+
+    if (error) throw error
+    return data
+  },
+
+  async crearDocumentoVencimiento(documento: {
+    funcionario_id: string | null
+    camioneta_id: string | null
+    nombre_documento: string
+    fecha_vencimiento: string
+    creado_por: string
+  }) {
+    const { data, error } = await supabase.from('documentos_vencimiento').insert([documento]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  async actualizarDocumentoVencimiento(id: string, cambios: Partial<{ nombre_documento: string; fecha_vencimiento: string }>) {
+    const { data, error } = await supabase
+      .from('documentos_vencimiento')
+      .update({ ...cambios, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  async eliminarDocumentoVencimiento(id: string) {
+    const { error } = await supabase.from('documentos_vencimiento').delete().eq('id', id)
+    if (error) throw error
+  },
 }

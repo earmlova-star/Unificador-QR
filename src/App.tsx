@@ -32,6 +32,9 @@ const EntregaTurno = lazy(() =>
 const OrganizadorTurnos = lazy(() =>
   import('@components/OrganizadorTurnos/OrganizadorTurnos').then((m) => ({ default: m.OrganizadorTurnos }))
 )
+const Vencimientos = lazy(() =>
+  import('@components/Vencimientos/Vencimientos').then((m) => ({ default: m.Vencimientos }))
+)
 
 const CLAVE_FAENA_ACTIVA = 'unificador-qr:faena-activa'
 
@@ -71,6 +74,7 @@ type Vista =
   | 'bodega'
   | 'entrega-turno'
   | 'organizador-turnos'
+  | 'vencimientos'
 
 export function App() {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
@@ -191,6 +195,8 @@ export function App() {
           (usuario.rol === UserRole.COORDINADOR || usuario.rol === UserRole.CONSULTOR) && (
             <OrganizadorTurnos usuario={usuario} />
           )}
+
+        {activeView === 'vencimientos' && usuario.rol === UserRole.COORDINADOR && <Vencimientos usuario={usuario} />}
       </Suspense>
       </ErrorBoundary>
 

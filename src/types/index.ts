@@ -97,6 +97,8 @@ export interface Contrato {
   mandante?: string;
   descripcion?: string;
   estado: 'activo' | 'inactivo';
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -265,7 +267,7 @@ export interface LineaManoObra {
   cargo: string;
   contratados: number;
   operativos: number;
-  // Solo mano de obra directa reparte horas por actividad (hasta 7, Act.1..Act.7)
+  // Solo mano de obra directa reparte horas por actividad (hasta 10, Act.1..Act.10)
   horas_por_actividad?: number[];
   // Solo mano de obra directa — si tiene cuadrillas, `operativos` pasa a
   // ser la suma automática de sus operativos (ver operativosEfectivos en
@@ -672,3 +674,36 @@ export interface GuiaDespacho {
   documento_nombre?: string | null;
   fecha_solicitud?: string | null;
 }
+
+// Módulo "Control de Vencimientos" — pedido explícito 2026-09-27 (ver
+// add_control_vencimientos.sql). "Funcionario" reutiliza el mismo listado
+// de trabajadores de Organizador de Turnos (TrabajadorCuadrilla), no una
+// entidad propia — evita duplicar el mismo RUT en dos tablas.
+export interface Camioneta {
+  id: string;
+  patente: string;
+  modelo?: string | null;
+  creado_por: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Exactamente uno de funcionario_id/camioneta_id viene con valor (impuesto
+// por un check en la base, ver la migración) — nunca ambos ni ninguno.
+export interface DocumentoVencimiento {
+  id: string;
+  funcionario_id: string | null;
+  camioneta_id: string | null;
+  nombre_documento: string;
+  fecha_vencimiento: string;
+  creado_por: string;
+  created_at: string;
+  updated_at: string;
+
+  // Traídos con un join (ver db.obtenerDocumentosVencimiento) solo para
+  // mostrar a quién/qué pertenece sin una consulta aparte.
+  funcionario?: { id: string; nombre: string; apellido: string; rut: string } | null;
+  camioneta?: { id: string; patente: string; modelo?: string | null } | null;
+}
+
+export type UrgenciaVencimiento = 'critico' | 'alerta' | 'normal';

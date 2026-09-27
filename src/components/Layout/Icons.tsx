@@ -150,6 +150,17 @@ export const IconOrganizadorTurnos = () => (
   </svg>
 )
 
+export const IconVencimientos = () => (
+  <svg {...base}>
+    <rect x="3" y="4" width="18" height="17" rx="2" />
+    <line x1="3" y1="9" x2="21" y2="9" />
+    <line x1="8" y1="2" x2="8" y2="6" />
+    <line x1="16" y1="2" x2="16" y2="6" />
+    <line x1="12" y1="12.5" x2="12" y2="16" />
+    <circle cx="12" cy="18.6" r="0.15" fill="currentColor" />
+  </svg>
+)
+
 export const IconProveedor = () => (
   <svg {...base}>
     <rect x="4" y="9" width="10" height="12" />
