@@ -2,11 +2,12 @@ import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { DocumentoVencimiento } from '@/types/index'
+import { DocumentoVencimiento, Usuario } from '@/types/index'
 
 interface ModalEditarFechaVencimientoProps {
   documento: DocumentoVencimiento
   etiquetaSujeto: string
+  usuario: Usuario
   onCerrar: () => void
   onActualizado: (documento: DocumentoVencimiento) => void
 }
@@ -14,8 +15,10 @@ interface ModalEditarFechaVencimientoProps {
 // Cambiar la fecha de un vencimiento borra su observación automáticamente
 // (trigger en la base, ver add_observacion_documentos_vencimiento.sql) —
 // una nota vieja ("trámite en curso, vence el 2/9") deja de tener sentido
-// si la fecha ya cambió a otro mes.
-export const ModalEditarFechaVencimiento = ({ documento, etiquetaSujeto, onCerrar, onActualizado }: ModalEditarFechaVencimientoProps) => {
+// si la fecha ya cambió a otro mes. Quién hizo el cambio se guarda
+// explícito desde acá (mismo patrón que comentarComoMandante en
+// partes_diarios — ver add_auditoria_documentos_vencimiento.sql).
+export const ModalEditarFechaVencimiento = ({ documento, etiquetaSujeto, usuario, onCerrar, onActualizado }: ModalEditarFechaVencimientoProps) => {
   const [fecha, setFecha] = useState(documento.fecha_vencimiento.slice(0, 10))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +29,12 @@ export const ModalEditarFechaVencimiento = ({ documento, etiquetaSujeto, onCerra
 
     setGuardando(true)
     try {
-      const actualizado = await db.actualizarDocumentoVencimiento(documento.id, { fecha_vencimiento: fecha })
+      const actualizado = await db.actualizarDocumentoVencimiento(documento.id, {
+        fecha_vencimiento: fecha,
+        vencimiento_actualizado_autor: usuario.nombre,
+        vencimiento_actualizado_por: usuario.id,
+        vencimiento_actualizado_en: new Date().toISOString(),
+      })
       onActualizado(actualizado as DocumentoVencimiento)
     } catch (err) {
       setError(traducirError(err, 'No se pudo actualizar la fecha de vencimiento'))
@@ -40,7 +48,12 @@ export const ModalEditarFechaVencimiento = ({ documento, etiquetaSujeto, onCerra
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-lg shadow-xl z-50 p-6">
-          <Dialog.Title className="text-lg font-bold text-slate-900">Editar vencimiento</Dialog.Title>
+          <div className="flex items-center justify-between">
+            <Dialog.Title className="text-lg font-bold text-slate-900">Editar vencimiento</Dialog.Title>
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+              👤 {usuario.nombre}
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-0.5 mb-4">
             {etiquetaSujeto} — {documento.nombre_documento}
           </p>

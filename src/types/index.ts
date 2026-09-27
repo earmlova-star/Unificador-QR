@@ -699,8 +699,20 @@ export interface DocumentoVencimiento {
 
   // Se borra sola en cuanto fecha_vencimiento cambia (trigger en la base,
   // ver add_observacion_documentos_vencimiento.sql) — una nota vieja atada
-  // a una fecha que ya no es la vigente deja de tener sentido.
+  // a una fecha que ya no es la vigente deja de tener sentido. Autoría
+  // (mismo patrón que comentario_mandante_autor/_por en partes_diarios,
+  // ver add_auditoria_documentos_vencimiento.sql) se borra junto con ella.
   observacion?: string | null;
+  observacion_autor?: string | null;
+  observacion_por?: string | null;
+  observacion_creada_en?: string | null;
+
+  // Quién hizo el último cambio de fecha_vencimiento (no se borra solo al
+  // volver a cambiar la fecha — cada actualización lo pisa con el usuario
+  // que la hizo).
+  vencimiento_actualizado_autor?: string | null;
+  vencimiento_actualizado_por?: string | null;
+  vencimiento_actualizado_en?: string | null;
 
   creado_por: string;
   created_at: string;

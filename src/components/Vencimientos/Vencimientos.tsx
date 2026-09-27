@@ -277,9 +277,16 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
                               </div>
                             )}
                             {item.observacion && (
-                              <div className="flex items-start gap-1 mt-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                                <span>📝</span>
-                                <span className="truncate">{item.observacion}</span>
+                              <div className="mt-1 p-1.5 rounded bg-amber-50 border border-amber-200 text-amber-900 max-w-[220px]">
+                                <div className="flex items-start gap-1 text-[10px] leading-tight">
+                                  <span>📝</span>
+                                  <span className="truncate">{item.observacion}</span>
+                                </div>
+                                {item.observacion_autor && (
+                                  <div className="mt-0.5 pl-4 text-[9px] text-amber-700/90 font-medium">
+                                    👤 Por: {item.observacion_autor}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </td>
@@ -291,6 +298,9 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
                           <td className="py-3 px-3 align-top whitespace-nowrap">
                             <div className="text-slate-700 font-medium">{formatearFechaCorta(item.fecha_vencimiento)}</div>
                             <div className={`text-[11px] font-medium ${estilo.texto}`}>{etiquetaDias(item.dias)}</div>
+                            {item.vencimiento_actualizado_autor && (
+                              <div className="text-[9px] text-slate-400 mt-0.5">Modif. por {item.vencimiento_actualizado_autor}</div>
+                            )}
                           </td>
                           <td className="py-3 pr-4 pl-1 align-top text-right">
                             <button
@@ -371,6 +381,7 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
         <ModalEditarFechaVencimiento
           documento={documentoEditandoFecha}
           etiquetaSujeto={etiquetaSujeto(documentoEditandoFecha)}
+          usuario={usuario}
           onCerrar={() => setDocumentoEditandoFecha(null)}
           onActualizado={(actualizado) => {
             actualizarDocumentoEnEstado(actualizado)
@@ -383,6 +394,7 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
         <ModalObservacionVencimiento
           documento={documentoEditandoObservacion}
           etiquetaSujeto={etiquetaSujeto(documentoEditandoObservacion)}
+          usuario={usuario}
           onCerrar={() => setDocumentoEditandoObservacion(null)}
           onActualizado={(actualizado) => {
             actualizarDocumentoEnEstado(actualizado)

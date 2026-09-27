@@ -1275,7 +1275,17 @@ export const db = {
 
   async actualizarDocumentoVencimiento(
     id: string,
-    cambios: Partial<{ nombre_documento: string; fecha_vencimiento: string; observacion: string | null }>
+    cambios: Partial<{
+      nombre_documento: string
+      fecha_vencimiento: string
+      observacion: string | null
+      observacion_autor: string | null
+      observacion_por: string | null
+      observacion_creada_en: string | null
+      vencimiento_actualizado_autor: string | null
+      vencimiento_actualizado_por: string | null
+      vencimiento_actualizado_en: string | null
+    }>
   ) {
     const { data, error } = await supabase
       .from('documentos_vencimiento')

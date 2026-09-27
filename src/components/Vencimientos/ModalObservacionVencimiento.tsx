@@ -2,19 +2,23 @@ import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { DocumentoVencimiento } from '@/types/index'
+import { DocumentoVencimiento, Usuario } from '@/types/index'
 
 interface ModalObservacionVencimientoProps {
   documento: DocumentoVencimiento
   etiquetaSujeto: string
+  usuario: Usuario
   onCerrar: () => void
   onActualizado: (documento: DocumentoVencimiento) => void
 }
 
 // Vale tanto para funcionarios como para camionetas — el registro ya trae
 // resuelto a cuál de los dos pertenece (documento.funcionario_id /
-// camioneta_id), acá solo se edita el texto.
-export const ModalObservacionVencimiento = ({ documento, etiquetaSujeto, onCerrar, onActualizado }: ModalObservacionVencimientoProps) => {
+// camioneta_id), acá solo se edita el texto. Autoría explícita desde acá
+// (mismo patrón que comentarComoMandante en partes_diarios — ver
+// add_auditoria_documentos_vencimiento.sql): si se deja la nota vacía, se
+// borra junto con su autoría, para no dejar un "Por: Fulano" sin nota.
+export const ModalObservacionVencimiento = ({ documento, etiquetaSujeto, usuario, onCerrar, onActualizado }: ModalObservacionVencimientoProps) => {
   const [observacion, setObservacion] = useState(documento.observacion ?? '')
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +27,18 @@ export const ModalObservacionVencimiento = ({ documento, etiquetaSujeto, onCerra
     setError(null)
     setGuardando(true)
     try {
-      const actualizado = await db.actualizarDocumentoVencimiento(documento.id, { observacion: observacion.trim() || null })
+      const texto = observacion.trim()
+      const actualizado = await db.actualizarDocumentoVencimiento(
+        documento.id,
+        texto
+          ? {
+              observacion: texto,
+              observacion_autor: usuario.nombre,
+              observacion_por: usuario.id,
+              observacion_creada_en: new Date().toISOString(),
+            }
+          : { observacion: null, observacion_autor: null, observacion_por: null, observacion_creada_en: null }
+      )
       onActualizado(actualizado as DocumentoVencimiento)
     } catch (err) {
       setError(traducirError(err, 'No se pudo guardar la observación'))
@@ -37,7 +52,12 @@ export const ModalObservacionVencimiento = ({ documento, etiquetaSujeto, onCerra
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white rounded-lg shadow-xl z-50 p-6">
-          <Dialog.Title className="text-lg font-bold text-slate-900">Agregar observación</Dialog.Title>
+          <div className="flex items-center justify-between">
+            <Dialog.Title className="text-lg font-bold text-slate-900">Agregar observación</Dialog.Title>
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+              👤 {usuario.nombre}
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-0.5 mb-4">
             {etiquetaSujeto} — {documento.nombre_documento}
           </p>
