@@ -55,6 +55,17 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
   const [mostrarModalVencimiento, setMostrarModalVencimiento] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
   const [filtro, setFiltro] = useState<FiltroTipo>('todos')
+  // Meses colapsados (todos empiezan expandidos) — clave mesAnio ('YYYY-MM').
+  const [mesesColapsados, setMesesColapsados] = useState<Set<string>>(new Set())
+
+  const alternarMesColapsado = (mesAnio: string) => {
+    setMesesColapsados((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(mesAnio)) siguiente.delete(mesAnio)
+      else siguiente.add(mesAnio)
+      return siguiente
+    })
+  }
 
   // Menú contextual (clic derecho en escritorio, mantener presionado en
   // celular — el navegador ya traduce el long-press a "contextmenu") sobre
@@ -228,16 +239,31 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
           {documentos.length === 0 ? 'No hay vencimientos registrados todavía.' : 'No hay vencimientos para este filtro.'}
         </div>
       ) : (
-        <div className="space-y-4">
-          {grupos.map((grupo) => (
-            <div key={grupo.mesAnio} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                <h3 className="text-base font-semibold text-slate-900 tracking-tight">{grupo.etiqueta}</h3>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+        <div className="space-y-5">
+          {grupos.map((grupo) => {
+            const colapsado = mesesColapsados.has(grupo.mesAnio)
+            return (
+            <div
+              key={grupo.mesAnio}
+              className="bg-slate-100 rounded-2xl overflow-hidden shadow-[8px_8px_20px_rgba(148,163,184,0.45),-8px_-8px_20px_rgba(255,255,255,0.85)]"
+            >
+              <button
+                type="button"
+                onClick={() => alternarMesColapsado(grupo.mesAnio)}
+                aria-expanded={!colapsado}
+                className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left select-none"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-slate-400 text-xs w-3 flex-shrink-0">{colapsado ? '▸' : '▾'}</span>
+                  <h3 className="text-base font-semibold text-slate-900 tracking-tight">{grupo.etiqueta}</h3>
+                </div>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-slate-600 shadow-[inset_2px_2px_4px_rgba(148,163,184,0.35),inset_-2px_-2px_4px_rgba(255,255,255,0.9)]">
                   {grupo.items.length} registro{grupo.items.length === 1 ? '' : 's'}
                 </span>
-              </div>
+              </button>
 
+              {!colapsado && (
+              <div className="mx-3 mb-3 rounded-xl overflow-hidden bg-white shadow-[inset_2px_2px_6px_rgba(148,163,184,0.3),inset_-2px_-2px_6px_rgba(255,255,255,0.7)]">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -319,8 +345,11 @@ export const Vencimientos = ({ usuario }: VencimientosProps) => {
                   </tbody>
                 </table>
               </div>
+              </div>
+              )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
