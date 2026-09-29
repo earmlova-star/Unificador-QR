@@ -42,6 +42,15 @@ function claveCandidato(trabajadorId: string, fecha: string, tipo: 'subida' | 'b
   return `${trabajadorId}|${fecha}|${tipo}`
 }
 
+// Comparación pura de código de carácter — a diferencia de localeCompare,
+// no depende de la configuración regional/ICU del navegador de quien mire
+// la pantalla. Para strings 'YYYY-MM-DD' (ancho fijo, siempre con ceros a
+// la izquierda) el orden lexicográfico coincide siempre con el
+// cronológico, así que esto basta sin tener que parsear fechas de verdad.
+function compararFechasISO(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
 // Candidatos = quién sube/baja y cuándo. La mayoría sale del motor de
 // turnos (no se guarda en la base) — cada trabajador de una cuadrilla
 // comparte la misma fecha de subida/bajada que su cuadrilla, y la misma
@@ -261,7 +270,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       if (!mapa.has(claveGrupo)) mapa.set(claveGrupo, { subida: [], bajada: [] })
       mapa.get(claveGrupo)![c.tipo].push(c)
     }
-    return [...mapa.entries()].sort(([a], [b]) => a.localeCompare(b))
+    return [...mapa.entries()].sort(([a], [b]) => compararFechasISO(a, b))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidatos, reservas])
 
@@ -285,7 +294,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       if (!mapa.has(c.fecha)) mapa.set(c.fecha, [])
       mapa.get(c.fecha)!.push(c)
     }
-    return [...mapa.entries()].sort(([a], [b]) => a.localeCompare(b))
+    return [...mapa.entries()].sort(([a], [b]) => compararFechasISO(a, b))
   }
 
   const renderGrupo = (c: Candidato) => {

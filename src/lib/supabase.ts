@@ -1143,6 +1143,7 @@ export const db = {
       .select('*')
       .gte('fecha', fechaDesde)
       .lte('fecha', fechaHasta)
+      .order('fecha', { ascending: true })
 
     if (error) throw error
     return data
