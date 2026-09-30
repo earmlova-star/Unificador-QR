@@ -12,6 +12,7 @@ import { ModalAgregarFuncionario } from './ModalAgregarFuncionario'
 import { ModalAgregarEventoTransito } from './ModalAgregarEventoTransito'
 import { ModalAgregarFuncionarioEvento } from './ModalAgregarFuncionarioEvento'
 import { ModalConfiguracionesViaje } from './ModalConfiguracionesViaje'
+import { ModalTrabajadores } from './ModalTrabajadores'
 import { ReservasPasajes } from './ReservasPasajes'
 
 interface OrganizadorTurnosProps {
@@ -40,6 +41,11 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [modalPatron, setModalPatron] = useState<PatronTurno | null | undefined>(undefined)
   const [cuadrillaFuncionarioId, setCuadrillaFuncionarioId] = useState<string | null | undefined>(undefined)
   const [cuadrillaEditando, setCuadrillaEditando] = useState<CuadrillaTurno | null>(null)
+  // Modal compartido "ver/editar/agregar/eliminar trabajadores" (pedido
+  // explícito 2026-09-30) — mismo componente para turnos y para subidas/
+  // bajadas sueltas, guardan el id de cuál está abierto.
+  const [cuadrillaTrabajadoresId, setCuadrillaTrabajadoresId] = useState<string | undefined>(undefined)
+  const [eventoTrabajadoresId, setEventoTrabajadoresId] = useState<string | undefined>(undefined)
   // Subida/Bajada sueltas (ver EventoTransito) — 'subida' | 'bajada' abre el
   // modal de creación con ese tipo fijo; el id abre "agregar funcionario"
   // para un evento ya creado.
@@ -50,19 +56,9 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [arrastrandoId, setArrastrandoId] = useState<string | null>(null)
   const [sobreId, setSobreId] = useState<string | null>(null)
   const [columnaHover, setColumnaHover] = useState<number | null>(null)
-  const [eventosExpandidos, setEventosExpandidos] = useState<Set<string>>(new Set())
   const [ocultas, setOcultas] = useState<Set<string>>(new Set())
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
   const [menuContextual, setMenuContextual] = useState<{ cuadrillaId: string; x: number; y: number } | null>(null)
-
-  const alternarEventoExpandido = (id: string) => {
-    setEventosExpandidos((prev) => {
-      const siguiente = new Set(prev)
-      if (siguiente.has(id)) siguiente.delete(id)
-      else siguiente.add(id)
-      return siguiente
-    })
-  }
 
   // "Ocultar" es solo visual (estado local, no se guarda en la base): saca
   // el turno de la carta Gantt sin tocar sus datos ni los de nadie más, y
@@ -484,7 +480,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                       {estaOculta && <span className="text-[10px] font-normal text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full flex-shrink-0">oculto</span>}
                       <button
                         type="button"
-                        onClick={() => setCuadrillaEditando(cuadrilla)}
+                        onClick={() => setCuadrillaTrabajadoresId(cuadrilla.id)}
                         title="Ver, editar, agregar o eliminar funcionarios de este turno"
                         className="text-xs text-slate-500 hover:text-blue-600 hover:underline flex-shrink-0"
                       >
@@ -585,27 +581,19 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   Subidas / Bajadas sueltas
                 </div>
                 {eventosTransito.map((evento) => {
-                  const estaExpandido = eventosExpandidos.has(evento.id)
                   const etiquetaTipo = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
                   return (
                     <Fragment key={evento.id}>
                       <div className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 sm:px-4 py-2 bg-slate-100">
                           <div className="flex items-center gap-2 min-w-0">
-                            <button
-                              type="button"
-                              onClick={() => alternarEventoExpandido(evento.id)}
-                              title={estaExpandido ? 'Ocultar trabajadores asignados' : 'Ver trabajadores asignados'}
-                              className="text-slate-400 hover:text-slate-700 flex-shrink-0"
-                            >
-                              {estaExpandido ? '▾' : '▸'}
-                            </button>
                             <h3 className="font-semibold text-sm text-slate-800 truncate">
                               {evento.tipo === 'subida' ? '▲' : '▼'} {etiquetaTipo} suelta
                             </h3>
                             <button
                               type="button"
-                              onClick={() => alternarEventoExpandido(evento.id)}
+                              onClick={() => setEventoTrabajadoresId(evento.id)}
+                              title="Ver, editar, agregar o eliminar funcionarios de esta subida/bajada"
                               className="text-xs text-slate-500 hover:text-blue-600 hover:underline flex-shrink-0"
                             >
                               {evento.trabajadores.length} trabajadores
@@ -654,38 +642,6 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                           })}
                         </div>
                       </div>
-
-                      {estaExpandido && (
-                        <div className="bg-slate-50 border-b border-slate-100 px-4 sm:px-6 py-3">
-                          <p className="text-xs font-semibold text-slate-500 uppercase mb-2">
-                            Trabajadores asignados — {etiquetaTipo} suelta del {evento.fecha}
-                          </p>
-                          {evento.trabajadores.length === 0 ? (
-                            <p className="text-xs text-slate-400">Sin trabajadores asignados todavía.</p>
-                          ) : (
-                            <div className="overflow-x-auto">
-                              <table className="text-xs text-left min-w-[400px]">
-                                <thead>
-                                  <tr className="text-slate-400 uppercase text-[10px]">
-                                    <th className="font-semibold pr-4 pb-1">Nombre</th>
-                                    <th className="font-semibold pr-4 pb-1">RUT</th>
-                                    <th className="font-semibold pb-1">Cargo</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {evento.trabajadores.map((t) => (
-                                    <tr key={t.id} className="border-t border-slate-200">
-                                      <td className="pr-4 py-1 text-slate-800">{t.nombre} {t.apellido}</td>
-                                      <td className="pr-4 py-1 text-slate-600">{t.rut}</td>
-                                      <td className="py-1 text-slate-600">{t.cargo}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </Fragment>
                   )
                 })}
@@ -751,6 +707,58 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         />
       )}
 
+      {cuadrillaTrabajadoresId !== undefined && (
+        <ModalTrabajadores
+          titulo={`Trabajadores — ${cuadrillas.find((c) => c.id === cuadrillaTrabajadoresId)!.nombre}`}
+          trabajadores={cuadrillas.find((c) => c.id === cuadrillaTrabajadoresId)!.trabajadores}
+          onCerrar={() => setCuadrillaTrabajadoresId(undefined)}
+          onAgregarUno={async (datos) => {
+            const t = await db.agregarTrabajadorCuadrilla({ cuadrilla_id: cuadrillaTrabajadoresId, ...datos })
+            setCuadrillas((prev) =>
+              prev.map((c) => (c.id === cuadrillaTrabajadoresId ? { ...c, trabajadores: [...c.trabajadores, t as any] } : c))
+            )
+            return t as any
+          }}
+          onAgregarMasivo={async (lista) => {
+            const nuevos = await db.agregarTrabajadoresCuadrilla(lista.map((t) => ({ cuadrilla_id: cuadrillaTrabajadoresId, ...t })))
+            setCuadrillas((prev) =>
+              prev.map((c) => (c.id === cuadrillaTrabajadoresId ? { ...c, trabajadores: [...c.trabajadores, ...(nuevos as any[])] } : c))
+            )
+            return nuevos as any
+          }}
+          onGuardarEdiciones={async (cambiados) => {
+            // guardarEdicionCuadrillaTurno también acepta cambios de
+            // campos propios del turno — acá se le pasan los mismos
+            // valores que ya tiene, sin cambios, porque esta pantalla
+            // solo toca trabajadores (ver ModalEditarTurno para lo otro).
+            const cuadrilla = cuadrillas.find((c) => c.id === cuadrillaTrabajadoresId)!
+            await db.guardarEdicionCuadrillaTurno(cuadrilla.id, cambiados, {
+              nombre: cuadrilla.nombre,
+              patron_dias_trabajo: cuadrilla.patron_dias_trabajo,
+              patron_dias_descanso: cuadrilla.patron_dias_descanso,
+              patron_incluye_subida: cuadrilla.patron_incluye_subida,
+              fecha_inicio: cuadrilla.fecha_inicio,
+              color_tema: cuadrilla.color_tema,
+              config_subida_id: cuadrilla.config_subida_id ?? null,
+              config_bajada_id: cuadrilla.config_bajada_id ?? null,
+            })
+            setCuadrillas((prev) =>
+              prev.map((c) =>
+                c.id === cuadrillaTrabajadoresId
+                  ? { ...c, trabajadores: c.trabajadores.map((t) => { const cambio = cambiados.find((cc) => cc.id === t.id); return cambio ? { ...t, ...cambio } : t }) }
+                  : c
+              )
+            )
+          }}
+          onEliminar={async (id) => {
+            await db.eliminarTrabajadorCuadrilla(id)
+            setCuadrillas((prev) =>
+              prev.map((c) => (c.id === cuadrillaTrabajadoresId ? { ...c, trabajadores: c.trabajadores.filter((t) => t.id !== id) } : c))
+            )
+          }}
+        />
+      )}
+
       {modalConfiguraciones && (
         <ModalConfiguracionesViaje
           configuraciones={configuraciones}
@@ -782,6 +790,47 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               prev.map((e) => (e.id === eventoId ? { ...e, trabajadores: [...e.trabajadores, ...trabajadores] } : e))
             )
             setEventoFuncionarioId(undefined)
+          }}
+        />
+      )}
+
+      {eventoTrabajadoresId !== undefined && (
+        <ModalTrabajadores
+          titulo={(() => {
+            const evento = eventosTransito.find((e) => e.id === eventoTrabajadoresId)!
+            return `Trabajadores — ${evento.tipo === 'subida' ? 'Subida' : 'Bajada'} suelta del ${evento.fecha}`
+          })()}
+          trabajadores={eventosTransito.find((e) => e.id === eventoTrabajadoresId)!.trabajadores}
+          onCerrar={() => setEventoTrabajadoresId(undefined)}
+          onAgregarUno={async (datos) => {
+            const t = await db.agregarTrabajadorEventoTransito({ evento_id: eventoTrabajadoresId, ...datos })
+            setEventosTransito((prev) =>
+              prev.map((e) => (e.id === eventoTrabajadoresId ? { ...e, trabajadores: [...e.trabajadores, t as any] } : e))
+            )
+            return t as any
+          }}
+          onAgregarMasivo={async (lista) => {
+            const nuevos = await db.agregarTrabajadoresEventoTransito(lista.map((t) => ({ evento_id: eventoTrabajadoresId, ...t })))
+            setEventosTransito((prev) =>
+              prev.map((e) => (e.id === eventoTrabajadoresId ? { ...e, trabajadores: [...e.trabajadores, ...(nuevos as any[])] } : e))
+            )
+            return nuevos as any
+          }}
+          onGuardarEdiciones={async (cambiados) => {
+            await db.guardarTrabajadoresEventoTransito(eventoTrabajadoresId, cambiados)
+            setEventosTransito((prev) =>
+              prev.map((e) =>
+                e.id === eventoTrabajadoresId
+                  ? { ...e, trabajadores: e.trabajadores.map((t) => { const cambio = cambiados.find((cc) => cc.id === t.id); return cambio ? { ...t, ...cambio } : t }) }
+                  : e
+              )
+            )
+          }}
+          onEliminar={async (id) => {
+            await db.eliminarTrabajadorEventoTransito(id)
+            setEventosTransito((prev) =>
+              prev.map((e) => (e.id === eventoTrabajadoresId ? { ...e, trabajadores: e.trabajadores.filter((t) => t.id !== id) } : e))
+            )
           }}
         />
       )}

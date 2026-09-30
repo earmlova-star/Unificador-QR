@@ -1104,6 +1104,26 @@ export const db = {
     return data
   },
 
+  async eliminarTrabajadorEventoTransito(id: string) {
+    const { error } = await supabase.from('eventos_transito_trabajadores').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  // Guarda en una sola transacción todos los trabajadores editados de una
+  // subida/bajada suelta (ver add_guardar_trabajadores_evento_transito_rpc.sql)
+  // — mismo patrón que guardarEdicionCuadrillaTurno, para no dejar algunos
+  // guardados y otros no si un update falla a medio camino.
+  async guardarTrabajadoresEventoTransito(
+    eventoId: string,
+    trabajadores: Array<{ id: string; nombre: string; apellido: string; rut: string; cargo: string }>
+  ) {
+    const { error } = await supabase.rpc('guardar_trabajadores_evento_transito', {
+      p_evento_id: eventoId,
+      p_trabajadores: trabajadores,
+    })
+    if (error) throw error
+  },
+
   // ---------- Configuraciones de Viaje (presets de Origen/Destino/Hora) ----------
   // Ver add_configuraciones_viaje.sql. Reusables y asignables a un turno
   // (cuadrillas_turno.config_subida_id / config_bajada_id) — mismo acceso
