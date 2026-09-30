@@ -50,20 +50,10 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [arrastrandoId, setArrastrandoId] = useState<string | null>(null)
   const [sobreId, setSobreId] = useState<string | null>(null)
   const [columnaHover, setColumnaHover] = useState<number | null>(null)
-  const [expandidas, setExpandidas] = useState<Set<string>>(new Set())
   const [eventosExpandidos, setEventosExpandidos] = useState<Set<string>>(new Set())
   const [ocultas, setOcultas] = useState<Set<string>>(new Set())
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
   const [menuContextual, setMenuContextual] = useState<{ cuadrillaId: string; x: number; y: number } | null>(null)
-
-  const alternarExpandida = (id: string) => {
-    setExpandidas((prev) => {
-      const siguiente = new Set(prev)
-      if (siguiente.has(id)) siguiente.delete(id)
-      else siguiente.add(id)
-      return siguiente
-    })
-  }
 
   const alternarEventoExpandido = (id: string) => {
     setEventosExpandidos((prev) => {
@@ -356,7 +346,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         <p className="text-sm text-red-700 bg-red-50 border-b border-red-200 px-4 sm:px-6 py-3">{error}</p>
       )}
 
-      <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
+      <div className="relative flex flex-wrap items-center justify-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
         <button
           type="button"
           onClick={() => navegarVentana(-TAMANO_VENTANA)}
@@ -378,6 +368,22 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         >
           Siguiente →
         </button>
+        {/* Antes vivía dentro de la columna "Cuadrilla / Dotación" del
+            encabezado — esa columna se sacó para que los días empiecen
+            desde el borde izquierdo de la tabla (pedido explícito
+            2026-09-30), así que este toggle se movió acá. */}
+        {ocultas.size > 0 && (
+          <button
+            type="button"
+            onClick={() => setMostrarOcultos((v) => !v)}
+            title={mostrarOcultos ? 'Ocultar de nuevo los turnos ocultos' : 'Mostrar los turnos ocultos'}
+            className={`sm:absolute sm:right-4 px-2 py-1 rounded font-semibold transition-colors ${
+              mostrarOcultos ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            👁 {mostrarOcultos ? 'Viendo ocultos' : `Ocultos (${ocultas.size})`}
+          </button>
+        )}
       </div>
 
       {vista === 'gantt' && (cargando ? (
@@ -401,63 +407,50 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       ) : (
         <div className="overflow-x-auto">
           <div className="inline-block min-w-full">
+            {/* Encabezado del calendario: antes arrancaba después de una
+                columna "Cuadrilla / Dotación" de 192-384px; ahora que el
+                título de cada turno va en su propia banda arriba de sus
+                días (no al lado), los días parten directo del borde
+                izquierdo de la tabla (pedido explícito 2026-09-30). */}
             <div className="flex border-b border-slate-200 sticky top-0 bg-white z-10">
-              <div className="relative w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 font-semibold text-xs text-slate-500 uppercase tracking-wider border-r border-slate-200 sticky left-0 bg-white z-20">
-                Cuadrilla / Dotación
-                {ocultas.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setMostrarOcultos((v) => !v)}
-                    title={mostrarOcultos ? 'Ocultar de nuevo los turnos ocultos' : 'Mostrar los turnos ocultos'}
-                    className={`absolute bottom-1 right-2 px-1.5 py-0.5 rounded text-[10px] font-semibold normal-case tracking-normal transition-colors ${
-                      mostrarOcultos ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              {columnasFecha.map((fecha, idx) => {
+                const mes = fecha.toLocaleDateString('es-CL', { month: 'short' })
+                const diaSemana = fecha.toLocaleDateString('es-CL', { weekday: 'short' }).replace('.', '')
+                const esFinDeSemana = fecha.getDay() === 0 || fecha.getDay() === 6
+                const feriado = esFeriado(fecha)
+                return (
+                  <div
+                    key={idx}
+                    onMouseEnter={() => setColumnaHover(idx)}
+                    onMouseLeave={() => setColumnaHover((c) => (c === idx ? null : c))}
+                    title={feriado ? `Feriado: ${nombreFeriado(fecha)}` : undefined}
+                    className={`relative w-12 flex-shrink-0 text-center py-2 border-r border-slate-100 text-xs ${
+                      feriado
+                        ? 'bg-yellow-100 font-bold text-yellow-800'
+                        : esFinDeSemana
+                        ? 'bg-amber-50 font-bold text-amber-700'
+                        : 'text-slate-600'
                     }`}
                   >
-                    👁 {mostrarOcultos ? 'Viendo ocultos' : `Ocultos (${ocultas.size})`}
-                  </button>
-                )}
-              </div>
-              <div className="flex">
-                {columnasFecha.map((fecha, idx) => {
-                  const mes = fecha.toLocaleDateString('es-CL', { month: 'short' })
-                  const diaSemana = fecha.toLocaleDateString('es-CL', { weekday: 'short' }).replace('.', '')
-                  const esFinDeSemana = fecha.getDay() === 0 || fecha.getDay() === 6
-                  const feriado = esFeriado(fecha)
-                  return (
-                    <div
-                      key={idx}
-                      onMouseEnter={() => setColumnaHover(idx)}
-                      onMouseLeave={() => setColumnaHover((c) => (c === idx ? null : c))}
-                      title={feriado ? `Feriado: ${nombreFeriado(fecha)}` : undefined}
-                      className={`relative w-12 flex-shrink-0 text-center py-2 border-r border-slate-100 text-xs ${
-                        feriado
-                          ? 'bg-yellow-100 font-bold text-yellow-800'
-                          : esFinDeSemana
-                          ? 'bg-amber-50 font-bold text-amber-700'
-                          : 'text-slate-600'
-                      }`}
-                    >
-                      <div className="text-[10px] text-slate-400 uppercase">{mes}</div>
-                      <div>{fecha.getDate()}</div>
-                      <div className="text-[9px] uppercase opacity-70">{diaSemana}</div>
-                      {columnaHover === idx && <div className="absolute inset-0 bg-emerald-300/40 pointer-events-none" />}
-                    </div>
-                  )
-                })}
-              </div>
+                    <div className="text-[10px] text-slate-400 uppercase">{mes}</div>
+                    <div>{fecha.getDate()}</div>
+                    <div className="text-[9px] uppercase opacity-70">{diaSemana}</div>
+                    {columnaHover === idx && <div className="absolute inset-0 bg-emerald-300/40 pointer-events-none" />}
+                  </div>
+                )
+              })}
             </div>
 
             {cuadrillasVisibles.map((cuadrilla) => {
               const segmentos = generarLineaTiempoCuadrilla(cuadrilla, inicioVentanaFecha, TAMANO_VENTANA)
               const estaArrastrando = arrastrandoId === cuadrilla.id
               const estaSobre = sobreId === cuadrilla.id && arrastrandoId !== cuadrilla.id
-              const estaExpandida = expandidas.has(cuadrilla.id)
               const estaOculta = ocultas.has(cuadrilla.id)
 
               return (
               <Fragment key={cuadrilla.id}>
                 <div
-                  className={`flex border-b border-slate-100 hover:bg-slate-50 transition-colors ${
+                  className={`border-b border-slate-100 hover:bg-slate-50/60 transition-colors ${
                     estaArrastrando ? 'opacity-40' : ''
                   } ${estaSobre ? 'border-t-2 border-t-blue-500' : ''} ${estaOculta ? 'opacity-50' : ''}`}
                   onDragOver={(e) => { e.preventDefault(); setSobreId(cuadrilla.id) }}
@@ -468,8 +461,16 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                     setMenuContextual({ cuadrillaId: cuadrilla.id, x: e.clientX, y: e.clientY })
                   }}
                 >
-                  <div className="w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 border-r border-slate-200 sticky left-0 bg-white z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-0">
-                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                  {/* Banda de título — pedido explícito 2026-09-30: antes
+                      era una columna angosta al lado de los días (192-384px
+                      fijos, tapando nombres largos); ahora es una banda
+                      gris fija arriba de la fila de días de este turno. La
+                      cantidad de trabajadores se conserva, pero ahora es un
+                      link que abre el mismo modal "Editar Turno" (ya
+                      soporta editar/agregar/eliminar funcionarios) en vez
+                      de expandir una tabla de solo lectura debajo. */}
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 sm:px-4 py-2 bg-slate-100">
+                    <div className="flex items-center gap-2 min-w-0">
                       <span
                         draggable
                         onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setArrastrandoId(cuadrilla.id) }}
@@ -479,35 +480,24 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                       >
                         ⠿
                       </span>
+                      <h3 className="font-semibold text-sm text-slate-800 truncate">{cuadrilla.nombre}</h3>
+                      {estaOculta && <span className="text-[10px] font-normal text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full flex-shrink-0">oculto</span>}
                       <button
                         type="button"
-                        onClick={() => alternarExpandida(cuadrilla.id)}
-                        title={estaExpandida ? 'Ocultar trabajadores asignados' : 'Ver trabajadores asignados'}
-                        className="text-slate-400 hover:text-slate-700 flex-shrink-0"
+                        onClick={() => setCuadrillaEditando(cuadrilla)}
+                        title="Ver, editar, agregar o eliminar funcionarios de este turno"
+                        className="text-xs text-slate-500 hover:text-blue-600 hover:underline flex-shrink-0"
                       >
-                        {estaExpandida ? '▾' : '▸'}
+                        {cuadrilla.trabajadores.length} trabajadores
                       </button>
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-sm text-slate-800 truncate">
-                          {cuadrilla.nombre}
-                          {estaOculta && <span className="ml-1.5 text-[10px] font-normal text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">oculto</span>}
-                        </h3>
-                        <button
-                          type="button"
-                          onClick={() => alternarExpandida(cuadrilla.id)}
-                          className="text-xs text-slate-500 hover:text-blue-600 hover:underline"
-                        >
-                          {cuadrilla.trabajadores.length} trabajadores
-                        </button>
-                      </div>
                     </div>
 
-                    <div className="flex items-center gap-0.5 sm:gap-1">
+                    <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                       <button
                         type="button"
                         onClick={() => setCuadrillaEditando(cuadrilla)}
                         title="Editar turno"
-                        className="p-1 hover:bg-slate-100 rounded text-blue-600"
+                        className="p-1 hover:bg-slate-200 rounded text-blue-600"
                       >
                         ✎
                       </button>
@@ -515,7 +505,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         type="button"
                         onClick={() => setCuadrillaFuncionarioId(cuadrilla.id)}
                         title="Agregar funcionario"
-                        className="p-1 hover:bg-slate-100 rounded text-slate-600"
+                        className="p-1 hover:bg-slate-200 rounded text-slate-600"
                       >
                         +👤
                       </button>
@@ -523,7 +513,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         type="button"
                         onClick={() => moverFechaCuadrilla(cuadrilla, -1)}
                         title="Mover 1 día atrás"
-                        className="p-1 hover:bg-slate-100 rounded text-slate-500"
+                        className="p-1 hover:bg-slate-200 rounded text-slate-500"
                       >
                         ←
                       </button>
@@ -531,7 +521,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         type="button"
                         onClick={() => moverFechaCuadrilla(cuadrilla, 1)}
                         title="Mover 1 día adelante"
-                        className="p-1 hover:bg-slate-100 rounded text-slate-500"
+                        className="p-1 hover:bg-slate-200 rounded text-slate-500"
                       >
                         →
                       </button>
@@ -539,7 +529,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         type="button"
                         onClick={() => eliminarCuadrilla(cuadrilla)}
                         title="Eliminar turno"
-                        className="p-1 hover:bg-slate-100 rounded text-red-600"
+                        className="p-1 hover:bg-slate-200 rounded text-red-600"
                       >
                         🗑
                       </button>
@@ -585,38 +575,6 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                     ))}
                   </div>
                 </div>
-
-                {estaExpandida && (
-                  <div className="bg-slate-50 border-b border-slate-100 px-4 sm:px-6 py-3">
-                    <p className="text-xs font-semibold text-slate-500 uppercase mb-2">
-                      Trabajadores asignados — {cuadrilla.nombre}
-                    </p>
-                    {cuadrilla.trabajadores.length === 0 ? (
-                      <p className="text-xs text-slate-400">Sin trabajadores asignados todavía.</p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="text-xs text-left min-w-[400px]">
-                          <thead>
-                            <tr className="text-slate-400 uppercase text-[10px]">
-                              <th className="font-semibold pr-4 pb-1">Nombre</th>
-                              <th className="font-semibold pr-4 pb-1">RUT</th>
-                              <th className="font-semibold pb-1">Cargo</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {cuadrilla.trabajadores.map((t) => (
-                              <tr key={t.id} className="border-t border-slate-200">
-                                <td className="pr-4 py-1 text-slate-800">{t.nombre} {t.apellido}</td>
-                                <td className="pr-4 py-1 text-slate-600">{t.rut}</td>
-                                <td className="py-1 text-slate-600">{t.cargo}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
               </Fragment>
               )
             })}
@@ -631,9 +589,9 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   const etiquetaTipo = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
                   return (
                     <Fragment key={evento.id}>
-                      <div className="flex border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                        <div className="w-48 sm:w-96 flex-shrink-0 px-3 sm:px-4 py-2 border-r border-slate-200 sticky left-0 bg-white z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-0">
-                          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                      <div className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 sm:px-4 py-2 bg-slate-100">
+                          <div className="flex items-center gap-2 min-w-0">
                             <button
                               type="button"
                               onClick={() => alternarEventoExpandido(evento.id)}
@@ -642,26 +600,24 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                             >
                               {estaExpandido ? '▾' : '▸'}
                             </button>
-                            <div className="min-w-0">
-                              <h3 className="font-semibold text-sm text-slate-800 truncate">
-                                {evento.tipo === 'subida' ? '▲' : '▼'} {etiquetaTipo} suelta
-                              </h3>
-                              <button
-                                type="button"
-                                onClick={() => alternarEventoExpandido(evento.id)}
-                                className="text-xs text-slate-500 hover:text-blue-600 hover:underline"
-                              >
-                                {evento.trabajadores.length} trabajadores
-                              </button>
-                            </div>
+                            <h3 className="font-semibold text-sm text-slate-800 truncate">
+                              {evento.tipo === 'subida' ? '▲' : '▼'} {etiquetaTipo} suelta
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => alternarEventoExpandido(evento.id)}
+                              className="text-xs text-slate-500 hover:text-blue-600 hover:underline flex-shrink-0"
+                            >
+                              {evento.trabajadores.length} trabajadores
+                            </button>
                           </div>
 
-                          <div className="flex items-center gap-0.5 sm:gap-1">
+                          <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                             <button
                               type="button"
                               onClick={() => setEventoFuncionarioId(evento.id)}
                               title="Agregar funcionario"
-                              className="p-1 hover:bg-slate-100 rounded text-slate-600"
+                              className="p-1 hover:bg-slate-200 rounded text-slate-600"
                             >
                               +👤
                             </button>
@@ -669,7 +625,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                               type="button"
                               onClick={() => eliminarEvento(evento)}
                               title={`Eliminar ${etiquetaTipo.toLowerCase()}`}
-                              className="p-1 hover:bg-slate-100 rounded text-red-600"
+                              className="p-1 hover:bg-slate-200 rounded text-red-600"
                             >
                               🗑
                             </button>
