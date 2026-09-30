@@ -133,6 +133,18 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   const [error, setError] = useState<string | null>(null)
   const [terminal, setTerminal] = useState(UBICACION_TERMINAL)
   const [faena, setFaena] = useState(UBICACION_FAENA)
+  // Grupos colapsados (todos empiezan expandidos) — clave = claveGrupo
+  // (Fecha de Reserva del grupo). Pedido explícito 2026-09-30.
+  const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set())
+
+  const alternarGrupoColapsado = (claveGrupo: string) => {
+    setGruposColapsados((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(claveGrupo)) siguiente.delete(claveGrupo)
+      else siguiente.add(claveGrupo)
+      return siguiente
+    })
+  }
 
   const fechaDesde = useMemo(() => inicioVentanaFecha.toISOString().split('T')[0], [inicioVentanaFecha])
   const fechaHasta = useMemo(() => {
@@ -390,10 +402,24 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         </div>
       ) : (
         <div className="px-4 sm:px-6 py-4 space-y-6 overflow-x-auto">
-          {porFecha.map(([claveGrupo, grupos]) => (
+          {porFecha.map(([claveGrupo, grupos]) => {
+            const colapsado = gruposColapsados.has(claveGrupo)
+            const totalGrupo = grupos.subida.length + grupos.bajada.length
+            return (
             <div key={claveGrupo} className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="bg-slate-100 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-                <p className="text-xs font-bold text-slate-700">{formatearFecha(claveGrupo)}</p>
+                <button
+                  type="button"
+                  onClick={() => alternarGrupoColapsado(claveGrupo)}
+                  aria-expanded={!colapsado}
+                  className="flex items-center gap-2 select-none"
+                >
+                  <span className="text-slate-400 text-xs w-3 flex-shrink-0">{colapsado ? '▸' : '▾'}</span>
+                  <p className="text-xs font-bold text-slate-700">{formatearFecha(claveGrupo)}</p>
+                  <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5">
+                    {totalGrupo} {totalGrupo === 1 ? 'persona' : 'personas'}
+                  </span>
+                </button>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] font-semibold text-slate-500 uppercase">Encargado</label>
                   <input
@@ -421,7 +447,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                 </div>
               </div>
 
-              {grupos.subida.length > 0 && (
+              {!colapsado && grupos.subida.length > 0 && (
                 <div className="px-3 py-2 border-b border-slate-100 last:border-b-0">
                   <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-2">▲ Suben ({grupos.subida.length})</p>
                   <div className="space-y-3">
@@ -440,7 +466,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                 </div>
               )}
 
-              {grupos.bajada.length > 0 && (
+              {!colapsado && grupos.bajada.length > 0 && (
                 <div className="px-3 py-2">
                   <p className="text-[10px] font-semibold text-amber-700 uppercase mb-2">▼ Bajan ({grupos.bajada.length})</p>
                   <div className="space-y-3">
@@ -459,7 +485,8 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
