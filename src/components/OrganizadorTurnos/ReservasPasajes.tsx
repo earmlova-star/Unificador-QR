@@ -421,7 +421,9 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         <div className="px-4 sm:px-6 py-4 space-y-6 overflow-x-auto">
           {porFecha.map(([claveGrupo, grupos]) => {
             const colapsado = gruposColapsados.has(claveGrupo)
-            const totalGrupo = grupos.subida.length + grupos.bajada.length
+            const candidatosGrupo = [...grupos.subida, ...grupos.bajada]
+            const totalGrupo = candidatosGrupo.length
+            const confirmadasGrupo = candidatosGrupo.filter((c) => reservaDe(c)?.confirmada).length
             return (
             <div key={claveGrupo} className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="bg-slate-100 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -435,6 +437,15 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                   <p className="text-xs font-bold text-slate-700">{formatearFecha(claveGrupo)}</p>
                   <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5">
                     {totalGrupo} {totalGrupo === 1 ? 'persona' : 'personas'}
+                  </span>
+                  <span
+                    className={`text-[10px] font-medium rounded-full px-2 py-0.5 border ${
+                      totalGrupo > 0 && confirmadasGrupo === totalGrupo
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-white text-slate-500 border-slate-200'
+                    }`}
+                  >
+                    ✓ {confirmadasGrupo}/{totalGrupo} confirmadas
                   </span>
                 </button>
                 <div className="flex items-center gap-1.5">
