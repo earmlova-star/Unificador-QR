@@ -58,7 +58,9 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [columnaHover, setColumnaHover] = useState<number | null>(null)
   const [ocultas, setOcultas] = useState<Set<string>>(new Set())
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
-  const [menuContextual, setMenuContextual] = useState<{ cuadrillaId: string; x: number; y: number } | null>(null)
+  const [menuContextual, setMenuContextual] = useState<
+    { tipo: 'cuadrilla'; cuadrillaId: string; x: number; y: number } | { tipo: 'evento'; eventoId: string; x: number; y: number } | null
+  >(null)
 
   // "Ocultar" es solo visual (estado local, no se guarda en la base): saca
   // el turno de la carta Gantt sin tocar sus datos ni los de nadie más, y
@@ -200,6 +202,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   }
 
   const eliminarEvento = async (evento: EventoTransito) => {
+    setMenuContextual(null)
     const etiqueta = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
     const ok = window.confirm(`¿Eliminar esta ${etiqueta} suelta del ${evento.fecha}? Esta acción no se puede deshacer.`)
     if (!ok) return
@@ -454,7 +457,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   onDrop={(e) => { e.preventDefault(); soltarCuadrilla(cuadrilla); setArrastrandoId(null); setSobreId(null) }}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    setMenuContextual({ cuadrillaId: cuadrilla.id, x: e.clientX, y: e.clientY })
+                    setMenuContextual({ tipo: 'cuadrilla', cuadrillaId: cuadrilla.id, x: e.clientX, y: e.clientY })
                   }}
                 >
                   {/* Banda de título — pedido explícito 2026-09-30: antes
@@ -584,7 +587,13 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                   const etiquetaTipo = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
                   return (
                     <Fragment key={evento.id}>
-                      <div className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                      <div
+                        className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors"
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          setMenuContextual({ tipo: 'evento', eventoId: evento.id, x: e.clientX, y: e.clientY })
+                        }}
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 sm:px-4 py-2 bg-slate-100">
                           <div className="flex items-center gap-2 min-w-0">
                             <h3 className="font-semibold text-sm text-slate-800 truncate">
@@ -841,13 +850,30 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           style={{ top: menuContextual.y, left: menuContextual.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={() => alternarOculta(menuContextual.cuadrillaId)}
-            className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            {ocultas.has(menuContextual.cuadrillaId) ? '👁 Mostrar turno' : '🙈 Ocultar turno'}
-          </button>
+          {menuContextual.tipo === 'cuadrilla' ? (
+            <button
+              type="button"
+              onClick={() => alternarOculta(menuContextual.cuadrillaId)}
+              className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              {ocultas.has(menuContextual.cuadrillaId) ? '👁 Mostrar turno' : '🙈 Ocultar turno'}
+            </button>
+          ) : (
+            (() => {
+              const evento = eventosTransito.find((e) => e.id === menuContextual.eventoId)
+              if (!evento) return null
+              const etiqueta = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
+              return (
+                <button
+                  type="button"
+                  onClick={() => eliminarEvento(evento)}
+                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                >
+                  🗑 Eliminar {etiqueta.toLowerCase()} suelta
+                </button>
+              )
+            })()
+          )}
         </div>
       )}
     </div>
