@@ -51,6 +51,20 @@ function compararFechasISO(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
+// Viernes en que corresponde reservar los pasajes de una fecha de viaje:
+// los pasajes se reservan el viernes de la semana anterior a la del viaje
+// (esa semana se entiende de lunes a domingo) — pedido explícito
+// 2026-10-01. Ej: un viaje el martes 29-09-2026 cae en la semana que
+// empieza el lunes 28-09-2026, así que su viernes de reserva sugerido es
+// el 25-09-2026.
+function viernesReservaSugerido(fechaViajeISO: string): string {
+  const fecha = new Date(`${fechaViajeISO}T00:00:00`)
+  const diasDesdeLunes = (fecha.getDay() + 6) % 7 // getDay(): 0=domingo..6=sábado
+  const viernesAnterior = new Date(fecha)
+  viernesAnterior.setDate(viernesAnterior.getDate() - diasDesdeLunes - 3)
+  return viernesAnterior.toISOString().split('T')[0]
+}
+
 // Candidatos = quién sube/baja y cuándo. La mayoría sale del motor de
 // turnos (no se guarda en la base) — cada trabajador de una cuadrilla
 // comparte la misma fecha de subida/bajada que su cuadrilla, y la misma
@@ -234,11 +248,14 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   }
 
   // Clave de agrupamiento de un candidato: su Fecha de Reserva si ya tiene
-  // una asignada, o su fecha de viaje (subida/bajada) mientras no la tenga
-  // — pedido explícito 2026-09-25: la pantalla se organiza por Fecha de
-  // Reserva (la de la "cinta" del encabezado), no por fecha de viaje. Ver
-  // porFecha más abajo.
-  const claveGrupoDe = (c: Candidato) => reservaDe(c)?.fecha_reserva ?? c.fecha
+  // una asignada, o el viernes de reserva sugerido para su fecha de viaje
+  // mientras no la tenga — pedido explícito 2026-09-25: la pantalla se
+  // organiza por Fecha de Reserva (la de la "cinta" del encabezado), no
+  // por fecha de viaje. El fallback a viernesReservaSugerido (en vez de la
+  // fecha de viaje cruda) agrupa de entrada, sin edición manual, a quienes
+  // viajan lunes y martes de una misma semana bajo el viernes anterior que
+  // les corresponde — pedido explícito 2026-10-01. Ver porFecha más abajo.
+  const claveGrupoDe = (c: Candidato) => reservaDe(c)?.fecha_reserva ?? viernesReservaSugerido(c.fecha)
 
   // Encargado y Fecha de Reserva se editan una sola vez por grupo (en el
   // encabezado), no por trabajador — pedido explícito 2026-09-24. Se
