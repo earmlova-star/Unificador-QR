@@ -33,6 +33,11 @@ export const EntregaTurno = ({ usuario, contrato, faenaActiva }: EntregaTurnoPro
   const [seleccionada, setSeleccionada] = useState<ActividadTurno | null>(null)
   const [marcando, setMarcando] = useState(false)
   const [eliminando, setEliminando] = useState(false)
+  // Grupo "Completadas" colapsado por defecto — pedido explícito: separar
+  // las tareas terminadas de las pendientes en vez de mezclarlas en una
+  // sola lista plana, sin perder la trazabilidad (siguen accesibles, solo
+  // ocultas hasta que se despliega el grupo).
+  const [completadasColapsadas, setCompletadasColapsadas] = useState(true)
 
   const cargar = async () => {
     if (!contrato?.id) return
@@ -105,7 +110,33 @@ export const EntregaTurno = ({ usuario, contrato, faenaActiva }: EntregaTurnoPro
     }
   }
 
-  const pendientes = items.filter((i) => !i.hecha).length
+  const itemsPendientes = items.filter((i) => !i.hecha)
+  const itemsCompletadas = items.filter((i) => i.hecha)
+  const pendientes = itemsPendientes.length
+
+  const renderItem = (item: ActividadTurno) => (
+    <li
+      key={item.id}
+      onClick={() => setSeleccionada(item)}
+      className={`px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors ${item.hecha ? 'bg-green-50/40' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={`text-sm font-medium ${item.hecha ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+            {item.descripcion}
+          </p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {item.usuario_creador?.nombre ?? '—'} · {formatearFechaCorta(item.created_at)}
+          </p>
+        </div>
+        {item.hecha && (
+          <span className="shrink-0 px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+            Hecha
+          </span>
+        )}
+      </div>
+    </li>
+  )
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-6">
@@ -174,31 +205,40 @@ export const EntregaTurno = ({ usuario, contrato, faenaActiva }: EntregaTurnoPro
           <p className="text-xs text-slate-500 mb-2">
             {pendientes} pendiente{pendientes === 1 ? '' : 's'} · {items.length} en total
           </p>
-          <ul className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
-            {items.map((item) => (
-              <li
-                key={item.id}
-                onClick={() => setSeleccionada(item)}
-                className={`px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors ${item.hecha ? 'bg-green-50/40' : ''}`}
+
+          {itemsPendientes.length === 0 ? (
+            <p className="text-sm text-slate-400 py-6 text-center border border-dashed border-slate-200 rounded-lg mb-4">
+              Sin actividades pendientes.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden mb-4">
+              {itemsPendientes.map(renderItem)}
+            </ul>
+          )}
+
+          {itemsCompletadas.length > 0 && (
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setCompletadasColapsadas((v) => !v)}
+                aria-expanded={!completadasColapsadas}
+                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left select-none transition-colors"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className={`text-sm font-medium ${item.hecha ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                      {item.descripcion}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {item.usuario_creador?.nombre ?? '—'} · {formatearFechaCorta(item.created_at)}
-                    </p>
-                  </div>
-                  {item.hecha && (
-                    <span className="shrink-0 px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
-                      Hecha
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                  <span className="text-slate-400 text-xs w-3 flex-shrink-0">{completadasColapsadas ? '▸' : '▾'}</span>
+                  ✓ Completadas
+                </span>
+                <span className="text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5">
+                  {itemsCompletadas.length}
+                </span>
+              </button>
+              {!completadasColapsadas && (
+                <ul className="divide-y divide-slate-100 border-t border-slate-200">
+                  {itemsCompletadas.map(renderItem)}
+                </ul>
+              )}
+            </div>
+          )}
         </>
       )}
 
