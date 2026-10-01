@@ -12,7 +12,7 @@ interface ModalAgregarEventoTransitoProps {
   configuraciones: ConfiguracionViaje[]
   usuario: Usuario
   onCerrar: () => void
-  onCreado: (evento: EventoTransito) => void
+  onCreado: (eventos: EventoTransito[]) => void
 }
 
 interface FuncionarioBorrador {
@@ -27,13 +27,21 @@ function funcionarioVacio(): FuncionarioBorrador {
   return { key: crypto.randomUUID(), nombre: '', apellido: '', rut: '', cargo: '' }
 }
 
-// Crea una Subida o Bajada suelta: un día de tránsito independiente de
-// cualquier Turno/cuadrilla, sin patrón ni ciclo — ver EventoTransito en
-// types/index.ts. Misma estructura que ModalAgregarTurno.tsx (fecha +
-// funcionarios uno por uno o pegado masivo), sin los campos de patrón que
-// acá no aplican.
+// Crea una o varias Subidas/Bajadas sueltas: días de tránsito
+// independientes de cualquier Turno/cuadrilla, sin patrón ni ciclo — ver
+// EventoTransito en types/index.ts. Misma estructura que
+// ModalAgregarTurno.tsx (funcionarios uno por uno o pegado masivo), sin
+// los campos de patrón que acá no aplican.
+//
+// Fechas múltiples (pedido explícito 2026-10-02): en vez de una sola
+// fecha, se arma una LISTA de fechas (se agregan de a una) que comparten
+// la misma configuración de viaje y la misma lista de funcionarios — el
+// caso típico es el mismo grupo viajando varios días sueltos distintos.
+// guardar() las crea todas en una sola llamada atómica (ver
+// crearEventosTransitoMultiples en supabase.ts), no una por fecha.
 export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onCerrar, onCreado }: ModalAgregarEventoTransitoProps) => {
-  const [fecha, setFecha] = useState(CALENDARIO_INICIO)
+  const [fechas, setFechas] = useState<string[]>([])
+  const [fechaNueva, setFechaNueva] = useState(CALENDARIO_INICIO)
   const [configuracionId, setConfiguracionId] = useState('')
   const [funcionarios, setFuncionarios] = useState<FuncionarioBorrador[]>([])
   const [mostrarPegado, setMostrarPegado] = useState(false)
@@ -42,6 +50,19 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
   const [error, setError] = useState<string | null>(null)
 
   const { validos: masivoValidos, errores: masivoErrores } = parsearTrabajadoresMasivo(textoMasivo)
+
+  const agregarFecha = () => {
+    setError(null)
+    if (fechaNueva < CALENDARIO_INICIO || fechaNueva > CALENDARIO_FIN) {
+      return setError(`La fecha debe estar entre ${CALENDARIO_INICIO} y ${CALENDARIO_FIN}.`)
+    }
+    if (fechas.includes(fechaNueva)) return setError('Esa fecha ya está en la lista.')
+    setFechas((prev) => [...prev, fechaNueva].sort())
+  }
+
+  const quitarFecha = (fecha: string) => {
+    setFechas((prev) => prev.filter((f) => f !== fecha))
+  }
 
   const agregarDesdePegado = () => {
     if (masivoValidos.length === 0) return
@@ -62,9 +83,7 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
   const guardar = async () => {
     setError(null)
 
-    if (fecha < CALENDARIO_INICIO || fecha > CALENDARIO_FIN) {
-      return setError(`La fecha debe estar entre ${CALENDARIO_INICIO} y ${CALENDARIO_FIN}.`)
-    }
+    if (fechas.length === 0) return setError('Agrega al menos una fecha.')
     for (const f of funcionarios) {
       if (!f.nombre.trim() || !f.apellido.trim() || !f.cargo.trim()) {
         return setError('Completa nombre, apellido y cargo de cada funcionario agregado.')
@@ -76,23 +95,22 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
 
     setGuardando(true)
     try {
-      const evento = await db.crearEventoTransito({ tipo, fecha, configuracion_id: configuracionId || null, creado_por: usuario.id })
+      const eventos = await db.crearEventosTransitoMultiples({
+        tipo,
+        fechas,
+        configuracion_id: configuracionId || null,
+        trabajadores: funcionarios.map((f) => ({
+          nombre: f.nombre.trim(),
+          apellido: f.apellido.trim(),
+          rut: f.rut,
+          cargo: f.cargo.trim(),
+        })),
+        creado_por: usuario.id,
+      })
 
-      const trabajadoresCreados = funcionarios.length
-        ? await db.agregarTrabajadoresEventoTransito(
-            funcionarios.map((f) => ({
-              evento_id: evento.id,
-              nombre: f.nombre.trim(),
-              apellido: f.apellido.trim(),
-              rut: f.rut,
-              cargo: f.cargo.trim(),
-            }))
-          )
-        : []
-
-      onCreado({ ...evento, trabajadores: trabajadoresCreados } as EventoTransito)
+      onCreado(eventos as EventoTransito[])
     } catch (err) {
-      setError(traducirError(err, `No se pudo crear la ${etiquetaTipo.toLowerCase()}`))
+      setError(traducirError(err, `No se pudo crear la${fechas.length === 1 ? '' : 's'} ${etiquetaTipo.toLowerCase()}${fechas.length === 1 ? '' : 's'}`))
     } finally {
       setGuardando(false)
     }
@@ -105,20 +123,53 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-lg shadow-xl z-50 p-6 max-h-[85vh] overflow-y-auto">
           <Dialog.Title className="text-lg font-bold text-slate-900 mb-1">Agregar {etiquetaTipo}</Dialog.Title>
           <p className="text-xs text-slate-500 mb-4">
-            Un día suelto de {etiquetaTipo.toLowerCase()}, independiente de cualquier turno — no repite ningún ciclo.
+            Uno o varios días sueltos de {etiquetaTipo.toLowerCase()}, independientes de cualquier turno — no repiten ningún ciclo. Misma configuración de viaje y mismos funcionarios para todas las fechas que agregues.
           </p>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Fecha</label>
-              <input
-                type="date"
-                min={CALENDARIO_INICIO}
-                max={CALENDARIO_FIN}
-                value={fecha}
-                onChange={(e) => setFecha(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-              />
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                Fecha{fechas.length > 0 ? `s (${fechas.length})` : ''}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  min={CALENDARIO_INICIO}
+                  max={CALENDARIO_FIN}
+                  value={fechaNueva}
+                  onChange={(e) => setFechaNueva(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                />
+                <button
+                  type="button"
+                  onClick={agregarFecha}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-md"
+                >
+                  + Agregar
+                </button>
+              </div>
+              {fechas.length === 0 ? (
+                <p className="text-xs text-slate-400 mt-1">Agrega al menos una fecha — puedes agregar varias para crear {tipo === 'subida' ? 'varias subidas' : 'varias bajadas'} de una vez.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {fechas.map((f) => (
+                    <span
+                      key={f}
+                      className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                    >
+                      {f}
+                      <button
+                        type="button"
+                        onClick={() => quitarFecha(f)}
+                        aria-label={`Quitar fecha ${f}`}
+                        className="text-blue-400 hover:text-blue-700 leading-none"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -191,7 +242,7 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
 
               {funcionarios.length === 0 && (
                 <p className="text-xs text-slate-400">
-                  Puedes crear la {etiquetaTipo.toLowerCase()} sin funcionarios y agregarlos después, o incluirlos ahora.
+                  Puedes crear la{fechas.length === 1 ? '' : 's'} {etiquetaTipo.toLowerCase()}{fechas.length === 1 ? '' : 's'} sin funcionarios y agregarlos después, o incluirlos ahora.
                 </p>
               )}
 
@@ -232,10 +283,14 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
               <button
                 type="button"
                 onClick={guardar}
-                disabled={guardando}
+                disabled={guardando || fechas.length === 0}
                 className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
               >
-                {guardando ? 'Creando…' : `Crear ${etiquetaTipo.toLowerCase()}`}
+                {guardando
+                  ? 'Creando…'
+                  : fechas.length > 1
+                  ? `Crear ${fechas.length} ${etiquetaTipo.toLowerCase()}s`
+                  : `Crear ${etiquetaTipo.toLowerCase()}`}
               </button>
             </div>
           </div>

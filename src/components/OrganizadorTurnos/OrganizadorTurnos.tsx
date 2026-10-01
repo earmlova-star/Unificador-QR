@@ -800,7 +800,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           configuraciones={configuraciones}
           usuario={usuario}
           onCerrar={() => setModalEvento(undefined)}
-          onCreado={(nuevo) => { setEventosTransito((prev) => [...prev, nuevo]); setModalEvento(undefined) }}
+          onCreado={(nuevos) => { setEventosTransito((prev) => [...prev, ...nuevos]); setModalEvento(undefined) }}
         />
       )}
 

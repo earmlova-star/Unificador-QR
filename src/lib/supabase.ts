@@ -1106,6 +1106,30 @@ export const db = {
     return data
   },
 
+  // Crea varias Subidas/Bajadas sueltas de una vez — misma lista de
+  // funcionarios, tipo y configuración de viaje para cada fecha (ver
+  // add_crear_eventos_transito_multiples_rpc.sql). Una sola invocación
+  // para todas las fechas, no una llamada por fecha: si una fallara a
+  // medio camino, las anteriores no quedan creadas en la base mientras la
+  // pantalla muestra un solo error genérico.
+  async crearEventosTransitoMultiples(payload: {
+    tipo: 'subida' | 'bajada'
+    fechas: string[]
+    configuracion_id: string | null
+    trabajadores: { nombre: string; apellido: string; rut: string; cargo: string }[]
+    creado_por: string
+  }) {
+    const { data, error } = await supabase.rpc('crear_eventos_transito_multiples', {
+      p_tipo: payload.tipo,
+      p_fechas: payload.fechas,
+      p_configuracion_id: payload.configuracion_id,
+      p_trabajadores: payload.trabajadores,
+      p_creado_por: payload.creado_por,
+    })
+    if (error) throw error
+    return data
+  },
+
   async eliminarEventoTransito(id: string) {
     // eventos_transito_trabajadores tiene "on delete cascade".
     const { error } = await supabase.from('eventos_transito').delete().eq('id', id)
