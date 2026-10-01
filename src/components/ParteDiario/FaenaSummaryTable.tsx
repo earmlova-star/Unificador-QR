@@ -1,4 +1,5 @@
 import { Faena, FAENA_LABELS, ParteDiario } from '@/types/index'
+import { calcularHHReales } from '@lib/calculosHH'
 
 interface FaenaSummaryTableProps {
   partes: ParteDiario[]
@@ -8,24 +9,36 @@ interface FaenaSummaryTableProps {
 // por faena activa (a diferencia de ReportsHistoryTable): su función es
 // comparar Las Tórtolas contra Los Bronces, así que siempre muestra ambas.
 export const FaenaSummaryTable = ({ partes }: FaenaSummaryTableProps) => {
-  // partes viene ordenado por numero_reporte descendente (ver
-  // obtenerPartesDiarios) y el correlativo es único y compartido entre
-  // ambas faenas, así que el primer reporte que aparezca de cada faena es
-  // su más reciente — y sus columnas *_acumuladas ya traen la suma corrida
-  // de todos los anteriores DE ESA FAENA (cada faena corre su propia
-  // cadena, ver obtenerUltimoParteDiario). El total general del contrato es
-  // la suma de esos dos snapshots — no hay que sumar columna por columna a
-  // través de todas las filas, cada "acumuladas" ya es un corrido, no un delta.
-  const ultimoLT = partes.find((p) => p.faena === Faena.LT)
-  const ultimoLB = partes.find((p) => p.faena === Faena.LB)
+  // Pedido explícito 2026-10-02: acá va el HH reportado por CADA faena de
+  // forma independiente, sumando el HH real (calcularHHReales) de todos
+  // sus propios reportes — no el campo *_acumuladas del último reporte de
+  // cada una. Antes sí se podía leer ese snapshot directo (cada faena
+  // corría su propia cadena de acumulados, así que el último reporte de
+  // una faena ya traía el corrido completo de esa faena), pero desde que
+  // recalcularAcumuladosContrato (supabase.ts) pasó a llevar una sola
+  // cadena combinada para todo el contrato, *_acumuladas de un reporte de
+  // LB incluye lo acumulado hasta ahí por LT también — ya no sirve para
+  // aislar el total de una faena sola.
+  const sumarFaena = (faena: Faena) => {
+    const reales = partes.filter((p) => p.faena === faena).map((p) => calcularHHReales(p, faena))
+    return {
+      directas: reales.reduce((acc, r) => acc + r.directas, 0),
+      hm: reales.reduce((acc, r) => acc + r.hm, 0),
+      indirectas: reales.reduce((acc, r) => acc + r.indirectas, 0),
+    }
+  }
+  const hayLT = partes.some((p) => p.faena === Faena.LT)
+  const hayLB = partes.some((p) => p.faena === Faena.LB)
+  const totalLT = sumarFaena(Faena.LT)
+  const totalLB = sumarFaena(Faena.LB)
   const filas = [
-    { faena: Faena.LT, etiqueta: FAENA_LABELS[Faena.LT], parte: ultimoLT },
-    { faena: Faena.LB, etiqueta: FAENA_LABELS[Faena.LB], parte: ultimoLB },
+    { faena: Faena.LT, etiqueta: FAENA_LABELS[Faena.LT], hay: hayLT, total: totalLT },
+    { faena: Faena.LB, etiqueta: FAENA_LABELS[Faena.LB], hay: hayLB, total: totalLB },
   ]
   const totalGeneral = {
-    directas: (ultimoLT?.hh_directas_acumuladas ?? 0) + (ultimoLB?.hh_directas_acumuladas ?? 0),
-    hm: (ultimoLT?.hm_acumuladas ?? 0) + (ultimoLB?.hm_acumuladas ?? 0),
-    indirectas: (ultimoLT?.hh_indirectas_acumuladas ?? 0) + (ultimoLB?.hh_indirectas_acumuladas ?? 0),
+    directas: totalLT.directas + totalLB.directas,
+    hm: totalLT.hm + totalLB.hm,
+    indirectas: totalLT.indirectas + totalLB.indirectas,
   }
   const totalHH = totalGeneral.directas + totalGeneral.hm + totalGeneral.indirectas
 
@@ -48,8 +61,8 @@ export const FaenaSummaryTable = ({ partes }: FaenaSummaryTableProps) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filas.map(({ faena, etiqueta, parte }) => {
-              if (!parte) {
+            {filas.map(({ faena, etiqueta, hay, total: totalFaena }) => {
+              if (!hay) {
                 return (
                   <tr key={faena}>
                     <td className="px-4 py-2 text-slate-700">{etiqueta}</td>
@@ -57,9 +70,7 @@ export const FaenaSummaryTable = ({ partes }: FaenaSummaryTableProps) => {
                   </tr>
                 )
               }
-              const directas = parte.hh_directas_acumuladas ?? 0
-              const hm = parte.hm_acumuladas ?? 0
-              const indirectas = parte.hh_indirectas_acumuladas ?? 0
+              const { directas, hm, indirectas } = totalFaena
               const total = directas + hm + indirectas
               const aporte = totalHH > 0 ? (total / totalHH) * 100 : 0
               return (
