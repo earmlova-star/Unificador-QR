@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
 import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
@@ -331,14 +331,39 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     return [...mapa.entries()].sort(([a], [b]) => compararFechasISO(a, b))
   }
 
-  const renderGrupo = (c: Candidato) => {
+  // Origen/Destino que de verdad se muestra en la fila de un candidato —
+  // con configuración vigente, esta manda siempre (ver resolverViaje);
+  // sin ella, se respeta lo ya guardado en su reserva, o el genérico si
+  // todavía no se ha guardado nada. Compartido entre renderGrupo (la
+  // celda) y agruparPorOrigenDestino (para agrupar por lo mismo que se ve).
+  const resolverViajeMostrado = (c: Candidato) => {
     const reserva = reservaDe(c)
     const { origen, destino, horaSugerida, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
-    // Con configuración vigente, esta manda siempre sobre lo ya guardado
-    // (ver resolverViaje) — sin ella, se respeta lo guardado como hasta
-    // ahora, o el genérico si todavía no se ha guardado nada.
     const origenMostrado = configResuelta ? origen : reserva?.origen ?? origen
     const destinoMostrado = configResuelta ? destino : reserva?.destino ?? destino
+    return { reserva, origenMostrado, destinoMostrado, horaSugerida }
+  }
+
+  // Pedido explícito 2026-10-02: dentro de cada fecha de viaje, además se
+  // agrupa por Origen → Destino (lo que de verdad se muestra en esa
+  // columna — ver resolverViajeMostrado), para separar con una banda
+  // gris cuándo cambia el tramo dentro de una misma fecha (ej. un turno
+  // con su propia ConfiguracionViaje mezclado con una subida suelta que
+  // va a un destino distinto). Mantiene el orden de aparición, no
+  // alfabético.
+  const agruparPorOrigenDestino = (lista: Candidato[]): [string, Candidato[]][] => {
+    const mapa = new Map<string, Candidato[]>()
+    for (const c of lista) {
+      const { origenMostrado, destinoMostrado } = resolverViajeMostrado(c)
+      const clave = `${origenMostrado} → ${destinoMostrado}`
+      if (!mapa.has(clave)) mapa.set(clave, [])
+      mapa.get(clave)!.push(c)
+    }
+    return [...mapa.entries()]
+  }
+
+  const renderGrupo = (c: Candidato) => {
+    const { reserva, origenMostrado, destinoMostrado, horaSugerida } = resolverViajeMostrado(c)
     return (
       <tr key={c.clave} className={reserva?.confirmada ? 'bg-green-50/40' : ''}>
         <td className="px-3 py-1.5 text-slate-800 whitespace-nowrap">{c.trabajador.nombre} {c.trabajador.apellido}</td>
@@ -491,7 +516,18 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                         </p>
                         <table className="min-w-full text-xs">
                           {tablaCabecera}
-                          <tbody className="divide-y divide-slate-100">{lista.map(renderGrupo)}</tbody>
+                          <tbody className="divide-y divide-slate-100">
+                            {agruparPorOrigenDestino(lista).map(([origenDestino, candidatosGrupo], idx) => (
+                              <Fragment key={origenDestino}>
+                                {idx > 0 && (
+                                  <tr>
+                                    <td colSpan={8} className="bg-slate-100 h-2 p-0" />
+                                  </tr>
+                                )}
+                                {candidatosGrupo.map(renderGrupo)}
+                              </Fragment>
+                            ))}
+                          </tbody>
                         </table>
                       </div>
                     ))}
@@ -510,7 +546,18 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                         </p>
                         <table className="min-w-full text-xs">
                           {tablaCabecera}
-                          <tbody className="divide-y divide-slate-100">{lista.map(renderGrupo)}</tbody>
+                          <tbody className="divide-y divide-slate-100">
+                            {agruparPorOrigenDestino(lista).map(([origenDestino, candidatosGrupo], idx) => (
+                              <Fragment key={origenDestino}>
+                                {idx > 0 && (
+                                  <tr>
+                                    <td colSpan={8} className="bg-slate-100 h-2 p-0" />
+                                  </tr>
+                                )}
+                                {candidatosGrupo.map(renderGrupo)}
+                              </Fragment>
+                            ))}
+                          </tbody>
                         </table>
                       </div>
                     ))}
