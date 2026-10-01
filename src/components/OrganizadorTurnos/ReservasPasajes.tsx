@@ -146,21 +146,51 @@ function resolverViaje(
   return { origen, destino, horaSugerida: null, configResuelta: false }
 }
 
+// Persistencia de qué grupos quedan colapsados — pedido explícito
+// 2026-10-02: "al recargar la página debe quedar según la acción
+// anterior". Mismo patrón que CLAVE_FAENA_ACTIVA en App.tsx: solo
+// localStorage (por navegador, no por usuario ni compartido), nunca
+// bloquea la pantalla si no está disponible (modo privado, etc.) — en
+// ese caso simplemente no se recuerda nada, como antes de este cambio.
+const CLAVE_GRUPOS_COLAPSADOS = 'unificador-qr:reservas-pasaje-grupos-colapsados'
+
+function leerGruposColapsadosGuardados(): Set<string> {
+  try {
+    const guardado = localStorage.getItem(CLAVE_GRUPOS_COLAPSADOS)
+    if (guardado) return new Set(JSON.parse(guardado))
+  } catch {
+    // localStorage no disponible, o el valor guardado no es JSON válido — se parte con todo expandido.
+  }
+  return new Set()
+}
+
+function guardarGruposColapsados(grupos: Set<string>) {
+  try {
+    localStorage.setItem(CLAVE_GRUPOS_COLAPSADOS, JSON.stringify([...grupos]))
+  } catch {
+    // localStorage no disponible — la elección solo dura esta sesión.
+  }
+}
+
 export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, inicioVentanaFecha, diasVentana, usuario }: ReservasPasajesProps) => {
   const [reservas, setReservas] = useState<ReservaPasaje[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [terminal, setTerminal] = useState(UBICACION_TERMINAL)
   const [faena, setFaena] = useState(UBICACION_FAENA)
-  // Grupos colapsados (todos empiezan expandidos) — clave = claveGrupo
-  // (Fecha de Reserva del grupo). Pedido explícito 2026-09-30.
-  const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set())
+  // Grupos colapsados — clave = claveGrupo (Fecha de Reserva del grupo).
+  // Pedido explícito 2026-09-30, y 2026-10-02: persiste en localStorage
+  // para que la pantalla recuerde qué grupos dejaste colapsados/
+  // expandidos entre recargas — solo dura en este navegador, no se
+  // comparte entre usuarios ni se guarda en la base.
+  const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(() => leerGruposColapsadosGuardados())
 
   const alternarGrupoColapsado = (claveGrupo: string) => {
     setGruposColapsados((prev) => {
       const siguiente = new Set(prev)
       if (siguiente.has(claveGrupo)) siguiente.delete(claveGrupo)
       else siguiente.add(claveGrupo)
+      guardarGruposColapsados(siguiente)
       return siguiente
     })
   }
