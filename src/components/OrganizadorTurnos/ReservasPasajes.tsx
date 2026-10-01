@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
 import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
@@ -188,11 +188,11 @@ function guardarGruposColapsados(grupos: Set<string>) {
   }
 }
 
-// Mismo patrón que CLAVE_GRUPOS_COLAPSADOS, pero para los subgrupos
-// Turno + Horario dentro de cada día (pedido explícito 2026-10-02) — ver
-// agruparPorTurnoHorario más abajo. Set aparte porque son dos niveles de
-// colapso independientes (colapsar el grupo del día no debería perder el
-// estado de sus subgrupos cuando se vuelve a expandir).
+// Mismo patrón que CLAVE_GRUPOS_COLAPSADOS, pero para los subgrupos por
+// viaje y los Grupos Webcontrol (pedido explícito 2026-10-02) — ver
+// agruparPorViaje/agruparPorGrupoWebcontrol más abajo. Set aparte porque
+// son niveles de colapso independientes (colapsar el grupo del día no
+// debería perder el estado de sus subgrupos cuando se vuelve a expandir).
 const CLAVE_SUBGRUPOS_COLAPSADOS = 'unificador-qr:reservas-pasaje-subgrupos-colapsados'
 
 function leerSubgruposColapsadosGuardados(): Set<string> {
@@ -435,8 +435,8 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // con configuración vigente, esta manda siempre (ver resolverViaje);
   // sin ella, se respeta lo ya guardado en su reserva, o el genérico si
   // todavía no se ha guardado nada. Compartido entre renderGrupo (la
-  // celda) y agruparPorTurnoHorario (para el subgrupo Turno + Horario
-  // Webcontrol).
+  // celda) y agruparPorViaje (para el subgrupo por día+Origen→Destino+
+  // horario) y agruparPorGrupoWebcontrol (nivel Turno Webcontrol).
   const resolverViajeMostrado = (c: Candidato) => {
     const reserva = reservaDe(c)
     const { origen, destino, horaSugerida, horarioWebcontrol, grupoWebcontrol, configResuelta } = resolverViaje(
@@ -449,29 +449,6 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     const origenMostrado = configResuelta ? origen : reserva?.origen ?? origen
     const destinoMostrado = configResuelta ? destino : reserva?.destino ?? destino
     return { reserva, origenMostrado, destinoMostrado, horaSugerida, horarioWebcontrol, grupoWebcontrol }
-  }
-
-  // Pedido explícito 2026-10-02: el subgrupo agrupa por Turno + Horario de
-  // Reserva Webcontrol — NO por horario de viaje ni por tipo (subida/
-  // bajada). Así, la subida de un turno (ej. 05:30, Terminal Borja →
-  // Pérez Caldera) y su bajada (ej. 17:00, Pérez Caldera → Terminal
-  // Borja) quedan en el MISMO subgrupo cuando comparten el mismo Horario
-  // de Reserva Webcontrol (ej. "Turno H - Horario Reserva Webcontrol
-  // 11:00" agrupa a ambas) — es una sola reserva en Webcontrol para el
-  // viaje redondo del día. Ordenados por ese horario ascendente (sin
-  // asignar, al final).
-  const agruparPorTurnoHorario = (lista: Candidato[]): [string, Candidato[]][] => {
-    const mapa = new Map<string, Candidato[]>()
-    for (const c of lista) {
-      const clave = `${c.cuadrillaNombre}||${resolverViajeMostrado(c).horarioWebcontrol ?? ''}`
-      if (!mapa.has(clave)) mapa.set(clave, [])
-      mapa.get(clave)!.push(c)
-    }
-    return [...mapa.entries()].sort(([, a], [, b]) => {
-      const ha = resolverViajeMostrado(a[0]).horarioWebcontrol ?? 'zz:zz'
-      const hb = resolverViajeMostrado(b[0]).horarioWebcontrol ?? 'zz:zz'
-      return ha < hb ? -1 : ha > hb ? 1 : 0
-    })
   }
 
   // Nivel más externo de Reservas de Pasajes (pedido explícito 2026-10-02)
@@ -501,13 +478,15 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     })
   }
 
-  // Dentro de un subgrupo, separa visualmente por sentido de viaje (banda
-  // de ancho completo, pedido explícito 2026-10-02) — verde para subida,
-  // ámbar para bajada, antes de las filas de ese tramo+horario. Si hay
-  // más de un tramo distinto del mismo sentido (poco común, pero posible
-  // si el subgrupo mezcla configuraciones distintas), cada uno tiene su
-  // propia banda. Subidas siempre antes que bajadas.
-  const agruparPorSentido = (lista: Candidato[]): [string, Candidato[]][] => {
+  // Criterio PRINCIPAL del subgrupo dentro de un día (pedido explícito
+  // 2026-10-02, reemplaza el agrupamiento anterior por Turno + Horario
+  // Webcontrol): mismo día de viaje (ya es el nivel que lo contiene) +
+  // mismo Origen → Destino + mismo horario de viaje, sin importar la
+  // cuadrilla/turno de cada quien. Si el subgrupo resultante mezcla más
+  // de un turno, o incluye alguna reserva suelta, eso se señala con una
+  // nota de texto en vez de partirlo en más subgrupos (ver
+  // renderSubgrupoViaje). Subidas siempre antes que bajadas.
+  const agruparPorViaje = (lista: Candidato[]): [string, Candidato[]][] => {
     const mapa = new Map<string, Candidato[]>()
     for (const c of lista) {
       const { origenMostrado, destinoMostrado, reserva, horaSugerida } = resolverViajeMostrado(c)
@@ -564,50 +543,48 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     )
   }
 
-  // Un subgrupo Turno + Horario (ver agruparPorTurnoHorario) — colapsable
-  // de forma independiente del grupo del día que lo contiene, con el
-  // mismo estilo del grupo principal pero más chico. claveSubgrupo ya
-  // incluye el día y el tipo (Suben/Bajan) para que dos subgrupos con el
-  // mismo Turno + Horario en días distintos no compartan su colapso.
-  const renderSubgrupoTurnoHorario = (candidatosSubgrupo: Candidato[], claveSubgrupo: string) => {
+  // Un subgrupo por viaje (ver agruparPorViaje) — colapsable de forma
+  // independiente del grupo del día que lo contiene. claveSubgrupo ya
+  // incluye el día para que dos subgrupos del mismo viaje en días
+  // distintos no compartan su colapso. Pedido explícito 2026-10-02: si
+  // sus candidatos no son todos del mismo turno (o alguno es una reserva
+  // suelta), se agrega una nota en vez de partirlo en más subgrupos.
+  const renderSubgrupoViaje = (candidatosSubgrupo: Candidato[], claveSubgrupo: string) => {
     const subColapsado = subgruposColapsados.has(claveSubgrupo)
-    const horarioWebcontrol = resolverViajeMostrado(candidatosSubgrupo[0]).horarioWebcontrol
+    const tipo = candidatosSubgrupo[0].tipo
+    const { origenMostrado, destinoMostrado, reserva, horaSugerida } = resolverViajeMostrado(candidatosSubgrupo[0])
+    const horario = reserva?.horario ?? horaSugerida ?? '—'
+    const cuadrillasDistintas = [...new Set(candidatosSubgrupo.map((c) => c.cuadrillaNombre))]
+    const sueltas = cuadrillasDistintas.filter((n) => n === 'Subida suelta' || n === 'Bajada suelta')
+    const nota =
+      cuadrillasDistintas.length > 1
+        ? `Incluye más de un turno: ${cuadrillasDistintas.join(', ')}.`
+        : sueltas.length > 0
+        ? `Reserva suelta (${cuadrillasDistintas[0]}), no pertenece a ningún turno.`
+        : null
     return (
       <div key={claveSubgrupo} className="border border-slate-200 rounded">
         <button
           type="button"
           onClick={() => alternarSubgrupoColapsado(claveSubgrupo)}
           aria-expanded={!subColapsado}
-          className="flex items-center gap-2 select-none w-full px-2 py-1.5 bg-slate-50 hover:bg-slate-100 rounded"
+          className={`flex items-center gap-2 select-none w-full px-2 py-1.5 rounded ${
+            tipo === 'subida' ? 'bg-emerald-50 hover:bg-emerald-100/70' : 'bg-amber-50 hover:bg-amber-100/70'
+          }`}
         >
           <span className="text-slate-400 text-xs w-3 flex-shrink-0">{subColapsado ? '▸' : '▾'}</span>
-          <span className="text-[11px] font-semibold text-slate-600">
-            {candidatosSubgrupo[0].cuadrillaNombre} - Horario Reserva Webcontrol {horarioWebcontrol ?? 'sin asignar'}
+          <span className={`text-[11px] font-semibold ${tipo === 'subida' ? 'text-emerald-800' : 'text-amber-800'}`}>
+            {tipo === 'subida' ? '▲ Subida / Hacia Faena' : '▼ Bajada / Retorno'} ({origenMostrado} → {destinoMostrado} · {horario})
           </span>
-          <span className="text-[10px] text-slate-400">
+          <span className="text-[10px] text-slate-500">
             ({candidatosSubgrupo.length} {candidatosSubgrupo.length === 1 ? 'persona' : 'personas'})
           </span>
         </button>
+        {nota && <p className="px-2 py-1 text-[10px] text-slate-500 italic bg-slate-50 border-t border-slate-100">Nota: {nota}</p>}
         {!subColapsado && (
           <table className="min-w-full text-xs">
             {tablaCabecera}
-            <tbody className="divide-y divide-slate-100">
-              {agruparPorSentido(candidatosSubgrupo).map(([claveSentido, candidatosSentido]) => {
-                const tipo = claveSentido.split('||')[0] as 'subida' | 'bajada'
-                const { origenMostrado, destinoMostrado, reserva, horaSugerida } = resolverViajeMostrado(candidatosSentido[0])
-                const horario = reserva?.horario ?? horaSugerida ?? '—'
-                return (
-                  <Fragment key={claveSentido}>
-                    <tr className={tipo === 'subida' ? 'bg-emerald-50/70 border-y border-emerald-200/80' : 'bg-amber-50/70 border-y border-amber-200/80'}>
-                      <td colSpan={9} className={`py-1.5 px-3 font-semibold text-[11px] ${tipo === 'subida' ? 'text-emerald-800' : 'text-amber-800'}`}>
-                        {tipo === 'subida' ? '▲ Subida / Hacia Faena' : '▼ Bajada / Retorno'} ({origenMostrado} → {destinoMostrado} · {horario})
-                      </td>
-                    </tr>
-                    {candidatosSentido.map(renderGrupo)}
-                  </Fragment>
-                )
-              })}
-            </tbody>
+            <tbody className="divide-y divide-slate-100">{candidatosSubgrupo.map(renderGrupo)}</tbody>
           </table>
         )}
       </div>
@@ -615,20 +592,18 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   }
 
   // Todos los candidatos (suben y bajan mezclados) de un día, agrupados
-  // en subgrupos colapsables de Turno + Horario Webcontrol (pedido
-  // explícito 2026-10-02). Las marcadas "No considerada" van en sus
-  // propios subgrupos al final, después de todos los activos.
-  // prefijoClave identifica el grupo + día al que pertenece esta tabla,
-  // para que las claves de subgrupo sean únicas en toda la pantalla.
+  // en subgrupos colapsables por viaje (ver agruparPorViaje). Las
+  // marcadas "No considerada" van en sus propios subgrupos al final,
+  // después de todos los activos. prefijoClave identifica el grupo + día
+  // al que pertenece esta tabla, para que las claves de subgrupo sean
+  // únicas en toda la pantalla.
   const renderTablaViaje = (lista: Candidato[], prefijoClave: string) => {
     const activos = lista.filter((c) => !(reservaDe(c)?.no_considerada ?? false))
     const noConsiderados = lista.filter((c) => reservaDe(c)?.no_considerada ?? false)
     return (
       <div className="space-y-2">
-        {agruparPorTurnoHorario(activos).map(([clave, grupo]) => renderSubgrupoTurnoHorario(grupo, `${prefijoClave}|${clave}`))}
-        {agruparPorTurnoHorario(noConsiderados).map(([clave, grupo]) =>
-          renderSubgrupoTurnoHorario(grupo, `${prefijoClave}|no-considerada|${clave}`)
-        )}
+        {agruparPorViaje(activos).map(([clave, grupo]) => renderSubgrupoViaje(grupo, `${prefijoClave}|${clave}`))}
+        {agruparPorViaje(noConsiderados).map(([clave, grupo]) => renderSubgrupoViaje(grupo, `${prefijoClave}|no-considerada|${clave}`))}
       </div>
     )
   }
