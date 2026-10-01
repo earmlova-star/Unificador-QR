@@ -754,12 +754,10 @@ export async function generarExcelParteDiario(parte: ParteDiario): Promise<Blob>
       const bufferFoto = await respFoto.arrayBuffer()
       const urlSinQuery = foto.url.split('?')[0].toLowerCase()
       const extension = urlSinQuery.endsWith('.png') ? 'png' : 'jpeg'
-      // Pedido explícito 2026-09-24: el pie de foto antepone el N° de
-      // Actividad con la que se cargó (ver actividadIndex en
-      // ParteDiarioForm.tsx). Ausente en fotos de reportes guardados antes
-      // de ese cambio — esas no llevan prefijo, como hasta ahora.
-      const caption = foto.actividadIndex !== undefined ? `Act. ${foto.actividadIndex + 1}${foto.caption ? `: ${foto.caption}` : ''}` : foto.caption
-      fotosDescargadas.push({ buffer: bufferFoto, extension, caption })
+      // Pedido explícito 2026-10-01: el pie de foto ya no antepone el N°
+      // de Actividad con la que se cargó (como hasta ahora) — queda solo
+      // el texto propio de la foto (foto.caption), si tiene.
+      fotosDescargadas.push({ buffer: bufferFoto, extension, caption: foto.caption })
     } catch (err) {
       console.error('No se pudo descargar una foto para el Excel:', err)
     }
