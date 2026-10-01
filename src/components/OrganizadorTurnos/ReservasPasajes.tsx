@@ -344,8 +344,12 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   const formatearFechaCorta = (fechaISO: string) =>
     new Date(`${fechaISO}T00:00:00`).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
 
+  // Pedido explícito 2026-10-02: ahora es el encabezado del día completo
+  // (Suben/Bajan van anidados debajo, ver el render más abajo), antes era
+  // el de cada sub-tabla de fecha de viaje dentro de Suben/Bajan por
+  // separado — por eso ahora incluye el año, igual que formatearFecha.
   const formatearFechaMedia = (fechaISO: string) =>
-    new Date(`${fechaISO}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' })
+    new Date(`${fechaISO}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 
   // Dentro de un grupo de Fecha de Reserva puede haber gente viajando en
   // días distintos (esa es la idea: reservar de una vez el pasaje de
@@ -425,6 +429,29 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       </tr>
     )
   }
+
+  // Tabla de un sub-bloque Suben o Bajan dentro de un día (ver render más
+  // abajo) — agrupada por Origen → Destino con banda gris entre tramos
+  // distintos (pedido explícito 2026-10-02). Factorizada para no repetir
+  // esta lógica dos veces (una para Suben, otra para Bajan) dentro de
+  // cada día.
+  const renderTablaViaje = (lista: Candidato[]) => (
+    <table className="min-w-full text-xs">
+      {tablaCabecera}
+      <tbody className="divide-y divide-slate-100">
+        {agruparPorOrigenDestino(lista).map(([origenDestino, candidatosGrupo], idx) => (
+          <Fragment key={origenDestino}>
+            {idx > 0 && (
+              <tr>
+                <td colSpan={8} className="bg-slate-100 h-2 p-0" />
+              </tr>
+            )}
+            {candidatosGrupo.map(renderGrupo)}
+          </Fragment>
+        ))}
+      </tbody>
+    </table>
+  )
 
   const tablaCabecera = (
     <thead>
@@ -535,63 +562,38 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                 </div>
               </div>
 
-              {!colapsado && grupos.subida.length > 0 && (
-                <div className="px-3 py-2 border-b border-slate-100 last:border-b-0">
-                  <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-2">▲ Suben ({grupos.subida.length})</p>
-                  <div className="divide-y divide-slate-200">
-                    {agruparPorFechaViaje(grupos.subida).map(([fechaViaje, lista]) => (
+              {/* Pedido explícito 2026-10-02: ordenado y agrupado primero
+                  por día (fecha de viaje real) — Suben y Bajan quedan
+                  anidados DEBAJO de cada día, en vez de ser las secciones
+                  de más afuera con el día repetido adentro de cada una
+                  (como era antes). candidatosGrupo ya mezcla subida y
+                  bajada de este grupo (ver más arriba, usado también para
+                  el badge de confirmadas). */}
+              {!colapsado && (
+                <div className="px-3 py-2 divide-y divide-slate-200">
+                  {agruparPorFechaViaje(candidatosGrupo).map(([fechaViaje, candidatosDia]) => {
+                    const subidaDia = candidatosDia.filter((c) => c.tipo === 'subida')
+                    const bajadaDia = candidatosDia.filter((c) => c.tipo === 'bajada')
+                    return (
                       <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
-                        <p className="text-[11px] font-semibold text-slate-500 capitalize mb-1">
-                          {formatearFechaMedia(fechaViaje)} ({lista.length})
+                        <p className="text-xs font-bold text-slate-700 capitalize mb-2">
+                          {formatearFechaMedia(fechaViaje)}
                         </p>
-                        <table className="min-w-full text-xs">
-                          {tablaCabecera}
-                          <tbody className="divide-y divide-slate-100">
-                            {agruparPorOrigenDestino(lista).map(([origenDestino, candidatosGrupo], idx) => (
-                              <Fragment key={origenDestino}>
-                                {idx > 0 && (
-                                  <tr>
-                                    <td colSpan={8} className="bg-slate-100 h-2 p-0" />
-                                  </tr>
-                                )}
-                                {candidatosGrupo.map(renderGrupo)}
-                              </Fragment>
-                            ))}
-                          </tbody>
-                        </table>
+                        {subidaDia.length > 0 && (
+                          <div className="mb-3 last:mb-0">
+                            <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-2">▲ Suben ({subidaDia.length})</p>
+                            {renderTablaViaje(subidaDia)}
+                          </div>
+                        )}
+                        {bajadaDia.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-semibold text-amber-700 uppercase mb-2">▼ Bajan ({bajadaDia.length})</p>
+                            {renderTablaViaje(bajadaDia)}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {!colapsado && grupos.bajada.length > 0 && (
-                <div className="px-3 py-2">
-                  <p className="text-[10px] font-semibold text-amber-700 uppercase mb-2">▼ Bajan ({grupos.bajada.length})</p>
-                  <div className="divide-y divide-slate-200">
-                    {agruparPorFechaViaje(grupos.bajada).map(([fechaViaje, lista]) => (
-                      <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
-                        <p className="text-[11px] font-semibold text-slate-500 capitalize mb-1">
-                          {formatearFechaMedia(fechaViaje)} ({lista.length})
-                        </p>
-                        <table className="min-w-full text-xs">
-                          {tablaCabecera}
-                          <tbody className="divide-y divide-slate-100">
-                            {agruparPorOrigenDestino(lista).map(([origenDestino, candidatosGrupo], idx) => (
-                              <Fragment key={origenDestino}>
-                                {idx > 0 && (
-                                  <tr>
-                                    <td colSpan={8} className="bg-slate-100 h-2 p-0" />
-                                  </tr>
-                                )}
-                                {candidatosGrupo.map(renderGrupo)}
-                              </Fragment>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ))}
-                  </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
