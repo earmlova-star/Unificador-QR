@@ -9,6 +9,7 @@ interface ModalConfiguracionesViajeProps {
   usuario: Usuario
   onCerrar: () => void
   onCreada: (config: ConfiguracionViaje) => void
+  onActualizada: (config: ConfiguracionViaje) => void
   onEliminada: (id: string) => void
 }
 
@@ -16,13 +17,19 @@ interface ModalConfiguracionesViajeProps {
 // Hora para Reservas de Pasajes) — crear y borrar acá; la asignación a
 // cada turno se hace en ModalEditarTurno.tsx (config_subida_id /
 // config_bajada_id), no en este modal.
-export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, onCreada, onEliminada }: ModalConfiguracionesViajeProps) => {
+export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, onCreada, onActualizada, onEliminada }: ModalConfiguracionesViajeProps) => {
   const [tipo, setTipo] = useState<'subida' | 'bajada'>('subida')
   const [origen, setOrigen] = useState('')
   const [destino, setDestino] = useState('')
   const [hora, setHora] = useState('')
+  // Horario al que hay que reservar en Webcontrol — pedido explícito
+  // 2026-10-02, distinto de `hora` (el horario real de viaje). Se guarda
+  // como texto libre (no "time"): en Webcontrol puede anotarse con
+  // minutos, AM/PM, etc. según cómo lo maneje cada coordinador.
+  const [horarioWebcontrol, setHorarioWebcontrol] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
+  const [guardandoWebcontrolId, setGuardandoWebcontrolId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const subidas = configuraciones.filter((c) => c.tipo === 'subida')
@@ -40,16 +47,32 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
         origen: origen.trim(),
         destino: destino.trim(),
         hora,
+        horario_reserva_webcontrol: horarioWebcontrol.trim() || null,
         creado_por: usuario.id,
       })
       onCreada(config as ConfiguracionViaje)
       setOrigen('')
       setDestino('')
       setHora('')
+      setHorarioWebcontrol('')
     } catch (err) {
       setError(traducirError(err, 'No se pudo crear la configuración'))
     } finally {
       setGuardando(false)
+    }
+  }
+
+  const guardarHorarioWebcontrol = async (config: ConfiguracionViaje, valor: string) => {
+    if (valor === (config.horario_reserva_webcontrol ?? '')) return
+    setError(null)
+    setGuardandoWebcontrolId(config.id)
+    try {
+      const actualizada = await db.actualizarConfiguracionViaje(config.id, { horario_reserva_webcontrol: valor || null })
+      onActualizada(actualizada as ConfiguracionViaje)
+    } catch (err) {
+      setError(traducirError(err, 'No se pudo guardar el horario de reserva Webcontrol'))
+    } finally {
+      setGuardandoWebcontrolId(null)
     }
   }
 
@@ -76,19 +99,32 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
     ) : (
       <div className="space-y-1.5">
         {lista.map((c) => (
-          <div key={c.id} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-            <div className="text-xs text-slate-700 min-w-0">
-              <span className="font-semibold">{c.hora}</span> — <span className="truncate">{c.origen} → {c.destino}</span>
+          <div key={c.id} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-slate-700 min-w-0">
+                <span className="font-semibold">{c.hora}</span> — <span className="truncate">{c.origen} → {c.destino}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => eliminar(c)}
+                disabled={eliminandoId === c.id}
+                title="Eliminar configuración"
+                className="text-red-600 hover:text-red-700 text-xs flex-shrink-0 disabled:opacity-50"
+              >
+                🗑
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => eliminar(c)}
-              disabled={eliminandoId === c.id}
-              title="Eliminar configuración"
-              className="text-red-600 hover:text-red-700 text-xs flex-shrink-0 disabled:opacity-50"
-            >
-              🗑
-            </button>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] text-slate-500 flex-shrink-0">Horario Reserva Webcontrol</label>
+              <input
+                type="text"
+                defaultValue={c.horario_reserva_webcontrol ?? ''}
+                placeholder="—"
+                disabled={guardandoWebcontrolId === c.id}
+                onBlur={(e) => guardarHorarioWebcontrol(c, e.target.value)}
+                className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600 disabled:opacity-50"
+              />
+            </div>
           </div>
         ))}
       </div>
@@ -161,6 +197,16 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
                     className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-500 mb-1">Horario Reserva Webcontrol</label>
+                <input
+                  type="text"
+                  value={horarioWebcontrol}
+                  onChange={(e) => setHorarioWebcontrol(e.target.value)}
+                  placeholder="11:00"
+                  className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                />
               </div>
               <div className="flex justify-end">
                 <button

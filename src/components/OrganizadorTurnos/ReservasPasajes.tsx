@@ -139,11 +139,19 @@ function resolverViaje(
   configuraciones: ConfiguracionViaje[],
   terminal: string,
   faena: string
-): { origen: string; destino: string; horaSugerida: string | null; configResuelta: boolean } {
+): { origen: string; destino: string; horaSugerida: string | null; horarioWebcontrol: string | null; configResuelta: boolean } {
   const config = configuracionId ? configuraciones.find((c) => c.id === configuracionId) : undefined
-  if (config) return { origen: config.origen, destino: config.destino, horaSugerida: config.hora, configResuelta: true }
+  if (config) {
+    return {
+      origen: config.origen,
+      destino: config.destino,
+      horaSugerida: config.hora,
+      horarioWebcontrol: config.horario_reserva_webcontrol ?? null,
+      configResuelta: true,
+    }
+  }
   const { origen, destino } = origenDestino(tipo, terminal, faena)
-  return { origen, destino, horaSugerida: null, configResuelta: false }
+  return { origen, destino, horaSugerida: null, horarioWebcontrol: null, configResuelta: false }
 }
 
 // Persistencia de qué grupos quedan colapsados — pedido explícito
@@ -422,10 +430,10 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // celda) y horarioMostrado (para el subgrupo Turno + Horario).
   const resolverViajeMostrado = (c: Candidato) => {
     const reserva = reservaDe(c)
-    const { origen, destino, horaSugerida, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
+    const { origen, destino, horaSugerida, horarioWebcontrol, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
     const origenMostrado = configResuelta ? origen : reserva?.origen ?? origen
     const destinoMostrado = configResuelta ? destino : reserva?.destino ?? destino
-    return { reserva, origenMostrado, destinoMostrado, horaSugerida }
+    return { reserva, origenMostrado, destinoMostrado, horaSugerida, horarioWebcontrol }
   }
 
   // Horario que de verdad se ve en la fila de un candidato — el ya
@@ -440,11 +448,14 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // Pedido explícito 2026-10-02: "agrupemos y señalemos por horario
   // dentro de un subgrupo colapsable" — reemplaza la banda gris por
   // Origen → Destino de antes (ver git log) por un subgrupo real y
-  // colapsable, agrupado por Turno + Horario (en la práctica casi
+  // colapsable, agrupado por Turno + Horario de viaje (en la práctica casi
   // siempre determina también el Origen → Destino, porque ambos salen de
-  // la misma ConfiguracionViaje asignada al turno). Encabezado del
-  // subgrupo: "{Turno} - Horario de Reserva {hora}" — ver render más
-  // abajo. Ordenados por horario ascendente (sin horario, al final).
+  // la misma ConfiguracionViaje asignada al turno). El encabezado del
+  // subgrupo NO muestra este horario de viaje, sino el Horario de Reserva
+  // Webcontrol de esa misma configuración (hallazgo QA 2026-10-02: son
+  // horarios distintos — ver resolverViaje/horarioWebcontrol y el render
+  // más abajo). Ordenados por horario de viaje ascendente (sin horario,
+  // al final).
   const agruparPorTurnoHorario = (lista: Candidato[]): [string, Candidato[]][] => {
     const mapa = new Map<string, Candidato[]>()
     for (const c of lista) {
@@ -504,7 +515,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // mismo Turno + Horario en días distintos no compartan su colapso.
   const renderSubgrupoTurnoHorario = (candidatosSubgrupo: Candidato[], claveSubgrupo: string) => {
     const subColapsado = subgruposColapsados.has(claveSubgrupo)
-    const horario = horarioMostrado(candidatosSubgrupo[0])
+    const horarioWebcontrol = resolverViajeMostrado(candidatosSubgrupo[0]).horarioWebcontrol
     return (
       <div key={claveSubgrupo} className="border border-slate-200 rounded">
         <button
@@ -515,7 +526,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         >
           <span className="text-slate-400 text-xs w-3 flex-shrink-0">{subColapsado ? '▸' : '▾'}</span>
           <span className="text-[11px] font-semibold text-slate-600">
-            {candidatosSubgrupo[0].cuadrillaNombre} - Horario de Reserva {horario ?? 'sin horario'}
+            {candidatosSubgrupo[0].cuadrillaNombre} - Horario Reserva Webcontrol {horarioWebcontrol ?? 'sin asignar'}
           </span>
           <span className="text-[10px] text-slate-400">
             ({candidatosSubgrupo.length} {candidatosSubgrupo.length === 1 ? 'persona' : 'personas'})

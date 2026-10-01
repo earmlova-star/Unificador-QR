@@ -451,6 +451,13 @@ export interface ConfiguracionViaje {
   destino: string;
   hora: string; // HH:mm
 
+  // Horario al que hay que reservar este viaje en Webcontrol (el sistema
+  // externo de la empresa de buses) — distinto de `hora` (el horario real
+  // de viaje). Pedido explícito 2026-10-02: el subgrupo de Reservas de
+  // Pasajes se nombra con este horario, no con `hora`. Null mientras no
+  // se haya cargado para esta configuración.
+  horario_reserva_webcontrol?: string | null;
+
   creado_por: string;
   created_at: string;
   updated_at: string;

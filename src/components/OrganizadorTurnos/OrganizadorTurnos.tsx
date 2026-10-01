@@ -836,6 +836,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           usuario={usuario}
           onCerrar={() => setModalConfiguraciones(false)}
           onCreada={(config) => setConfiguraciones((prev) => [...prev, config])}
+          onActualizada={(config) => setConfiguraciones((prev) => prev.map((c) => (c.id === config.id ? config : c)))}
           onEliminada={(id) =>
             setConfiguraciones((prev) => prev.filter((c) => c.id !== id))
           }

@@ -1206,8 +1206,29 @@ export const db = {
     return data
   },
 
-  async crearConfiguracionViaje(config: { tipo: 'subida' | 'bajada'; origen: string; destino: string; hora: string; creado_por: string }) {
+  async crearConfiguracionViaje(config: {
+    tipo: 'subida' | 'bajada'
+    origen: string
+    destino: string
+    hora: string
+    horario_reserva_webcontrol: string | null
+    creado_por: string
+  }) {
     const { data, error } = await supabase.from('configuraciones_viaje').insert([config]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  // Por ahora el único campo editable después de creada es el Horario de
+  // Reserva Webcontrol (pedido explícito 2026-10-02) — Origen/Destino/Hora
+  // se cambian borrando y creando de nuevo, como ya era antes.
+  async actualizarConfiguracionViaje(id: string, cambios: { horario_reserva_webcontrol: string | null }) {
+    const { data, error } = await supabase
+      .from('configuraciones_viaje')
+      .update({ ...cambios, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
     if (error) throw error
     return data
   },
