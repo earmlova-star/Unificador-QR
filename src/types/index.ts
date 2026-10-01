@@ -458,6 +458,15 @@ export interface ConfiguracionViaje {
   // se haya cargado para esta configuración.
   horario_reserva_webcontrol?: string | null;
 
+  // Nombre del "turno Webcontrol" (ej. "Turno H", "Turno AB") al que
+  // pertenece esta configuración — pedido explícito 2026-10-02. Varias
+  // configuraciones (ej. la de subida de un turno y la de su bajada)
+  // pueden compartir el mismo nombre: eso es lo que las agrupa juntas en
+  // el nivel más externo de Reservas de Pasajes, sin importar el nombre
+  // real de la cuadrilla/turno de cada una. Null = no pertenece a ningún
+  // grupo Webcontrol (se muestra sin ese nivel extra).
+  grupo_webcontrol?: string | null;
+
   creado_por: string;
   created_at: string;
   updated_at: string;

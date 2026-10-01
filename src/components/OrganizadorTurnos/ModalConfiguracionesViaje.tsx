@@ -27,6 +27,11 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
   // como texto libre (no "time"): en Webcontrol puede anotarse con
   // minutos, AM/PM, etc. según cómo lo maneje cada coordinador.
   const [horarioWebcontrol, setHorarioWebcontrol] = useState('')
+  // Nombre del grupo Webcontrol (ej. "Turno H") — pedido explícito
+  // 2026-10-02: varias configuraciones (subida y bajada de un mismo
+  // turno operativo) comparten el mismo nombre para agruparse juntas en
+  // el nivel más externo de Reservas de Pasajes.
+  const [grupoWebcontrol, setGrupoWebcontrol] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
   const [guardandoWebcontrolId, setGuardandoWebcontrolId] = useState<string | null>(null)
@@ -48,6 +53,7 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
         destino: destino.trim(),
         hora,
         horario_reserva_webcontrol: horarioWebcontrol.trim() || null,
+        grupo_webcontrol: grupoWebcontrol.trim() || null,
         creado_por: usuario.id,
       })
       onCreada(config as ConfiguracionViaje)
@@ -55,6 +61,7 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
       setDestino('')
       setHora('')
       setHorarioWebcontrol('')
+      setGrupoWebcontrol('')
     } catch (err) {
       setError(traducirError(err, 'No se pudo crear la configuración'))
     } finally {
@@ -71,6 +78,20 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
       onActualizada(actualizada as ConfiguracionViaje)
     } catch (err) {
       setError(traducirError(err, 'No se pudo guardar el horario de reserva Webcontrol'))
+    } finally {
+      setGuardandoWebcontrolId(null)
+    }
+  }
+
+  const guardarGrupoWebcontrol = async (config: ConfiguracionViaje, valor: string) => {
+    if (valor === (config.grupo_webcontrol ?? '')) return
+    setError(null)
+    setGuardandoWebcontrolId(config.id)
+    try {
+      const actualizada = await db.actualizarConfiguracionViaje(config.id, { grupo_webcontrol: valor || null })
+      onActualizada(actualizada as ConfiguracionViaje)
+    } catch (err) {
+      setError(traducirError(err, 'No se pudo guardar el grupo Webcontrol'))
     } finally {
       setGuardandoWebcontrolId(null)
     }
@@ -122,6 +143,19 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
                 placeholder="—"
                 disabled={guardandoWebcontrolId === c.id}
                 onBlur={(e) => guardarHorarioWebcontrol(c, e.target.value)}
+                className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600 disabled:opacity-50"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] text-slate-500 flex-shrink-0" title="Varias configuraciones con el mismo nombre se agrupan juntas en el nivel más externo de Reservas de Pasajes">
+                Grupo Webcontrol
+              </label>
+              <input
+                type="text"
+                defaultValue={c.grupo_webcontrol ?? ''}
+                placeholder="Turno H"
+                disabled={guardandoWebcontrolId === c.id}
+                onBlur={(e) => guardarGrupoWebcontrol(c, e.target.value)}
                 className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600 disabled:opacity-50"
               />
             </div>
@@ -198,15 +232,27 @@ export const ModalConfiguracionesViaje = ({ configuraciones, usuario, onCerrar, 
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Horario Reserva Webcontrol</label>
-                <input
-                  type="text"
-                  value={horarioWebcontrol}
-                  onChange={(e) => setHorarioWebcontrol(e.target.value)}
-                  placeholder="11:00"
-                  className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">Horario Reserva Webcontrol</label>
+                  <input
+                    type="text"
+                    value={horarioWebcontrol}
+                    onChange={(e) => setHorarioWebcontrol(e.target.value)}
+                    placeholder="11:00"
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-1">Grupo Webcontrol</label>
+                  <input
+                    type="text"
+                    value={grupoWebcontrol}
+                    onChange={(e) => setGrupoWebcontrol(e.target.value)}
+                    placeholder="Turno H"
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                  />
+                </div>
               </div>
               <div className="flex justify-end">
                 <button

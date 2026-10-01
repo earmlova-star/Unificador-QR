@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
 import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
@@ -139,7 +139,14 @@ function resolverViaje(
   configuraciones: ConfiguracionViaje[],
   terminal: string,
   faena: string
-): { origen: string; destino: string; horaSugerida: string | null; horarioWebcontrol: string | null; configResuelta: boolean } {
+): {
+  origen: string
+  destino: string
+  horaSugerida: string | null
+  horarioWebcontrol: string | null
+  grupoWebcontrol: string | null
+  configResuelta: boolean
+} {
   const config = configuracionId ? configuraciones.find((c) => c.id === configuracionId) : undefined
   if (config) {
     return {
@@ -147,11 +154,12 @@ function resolverViaje(
       destino: config.destino,
       horaSugerida: config.hora,
       horarioWebcontrol: config.horario_reserva_webcontrol ?? null,
+      grupoWebcontrol: config.grupo_webcontrol ?? null,
       configResuelta: true,
     }
   }
   const { origen, destino } = origenDestino(tipo, terminal, faena)
-  return { origen, destino, horaSugerida: null, horarioWebcontrol: null, configResuelta: false }
+  return { origen, destino, horaSugerida: null, horarioWebcontrol: null, grupoWebcontrol: null, configResuelta: false }
 }
 
 // Persistencia de qué grupos quedan colapsados — pedido explícito
@@ -431,10 +439,16 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // Webcontrol).
   const resolverViajeMostrado = (c: Candidato) => {
     const reserva = reservaDe(c)
-    const { origen, destino, horaSugerida, horarioWebcontrol, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
+    const { origen, destino, horaSugerida, horarioWebcontrol, grupoWebcontrol, configResuelta } = resolverViaje(
+      c.tipo,
+      c.configuracionId,
+      configuraciones,
+      terminal,
+      faena
+    )
     const origenMostrado = configResuelta ? origen : reserva?.origen ?? origen
     const destinoMostrado = configResuelta ? destino : reserva?.destino ?? destino
-    return { reserva, origenMostrado, destinoMostrado, horaSugerida, horarioWebcontrol }
+    return { reserva, origenMostrado, destinoMostrado, horaSugerida, horarioWebcontrol, grupoWebcontrol }
   }
 
   // Pedido explícito 2026-10-02: el subgrupo agrupa por Turno + Horario de
@@ -457,6 +471,52 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       const ha = resolverViajeMostrado(a[0]).horarioWebcontrol ?? 'zz:zz'
       const hb = resolverViajeMostrado(b[0]).horarioWebcontrol ?? 'zz:zz'
       return ha < hb ? -1 : ha > hb ? 1 : 0
+    })
+  }
+
+  // Nivel más externo de Reservas de Pasajes (pedido explícito 2026-10-02)
+  // — agrupa TODOS los candidatos de un grupo de Fecha de Reserva (sin
+  // importar el día de viaje) por el Grupo Webcontrol de su
+  // ConfiguracionViaje asignada (ej. "Turno H"), sin importar el nombre
+  // real de la cuadrilla/turno de cada uno. null = sin grupo asignado
+  // todavía — esos se siguen mostrando sueltos, sin este nivel extra (ver
+  // render más abajo), para no esconder nada mientras no se haya cargado
+  // la configuración. Los grupos nombrados van primero, alfabético; los
+  // sin asignar al final.
+  const agruparPorGrupoWebcontrol = (lista: Candidato[]): [string | null, Candidato[]][] => {
+    const mapa = new Map<string | null, Candidato[]>()
+    for (const c of lista) {
+      const clave = resolverViajeMostrado(c).grupoWebcontrol
+      if (!mapa.has(clave)) mapa.set(clave, [])
+      mapa.get(clave)!.push(c)
+    }
+    return [...mapa.entries()].sort(([a], [b]) => {
+      if (a === null) return b === null ? 0 : 1
+      if (b === null) return -1
+      return a < b ? -1 : a > b ? 1 : 0
+    })
+  }
+
+  // Dentro de un subgrupo, separa visualmente por sentido de viaje (banda
+  // de ancho completo, pedido explícito 2026-10-02) — verde para subida,
+  // ámbar para bajada, antes de las filas de ese tramo+horario. Si hay
+  // más de un tramo distinto del mismo sentido (poco común, pero posible
+  // si el subgrupo mezcla configuraciones distintas), cada uno tiene su
+  // propia banda. Subidas siempre antes que bajadas.
+  const agruparPorSentido = (lista: Candidato[]): [string, Candidato[]][] => {
+    const mapa = new Map<string, Candidato[]>()
+    for (const c of lista) {
+      const { origenMostrado, destinoMostrado, reserva, horaSugerida } = resolverViajeMostrado(c)
+      const horario = reserva?.horario ?? horaSugerida ?? '—'
+      const clave = `${c.tipo}||${origenMostrado}||${destinoMostrado}||${horario}`
+      if (!mapa.has(clave)) mapa.set(clave, [])
+      mapa.get(clave)!.push(c)
+    }
+    return [...mapa.entries()].sort(([a], [b]) => {
+      const tipoA = a.split('||')[0]
+      const tipoB = b.split('||')[0]
+      if (tipoA !== tipoB) return tipoA === 'subida' ? -1 : 1
+      return a < b ? -1 : a > b ? 1 : 0
     })
   }
 
@@ -527,7 +587,23 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         {!subColapsado && (
           <table className="min-w-full text-xs">
             {tablaCabecera}
-            <tbody className="divide-y divide-slate-100">{candidatosSubgrupo.map(renderGrupo)}</tbody>
+            <tbody className="divide-y divide-slate-100">
+              {agruparPorSentido(candidatosSubgrupo).map(([claveSentido, candidatosSentido]) => {
+                const tipo = claveSentido.split('||')[0] as 'subida' | 'bajada'
+                const { origenMostrado, destinoMostrado, reserva, horaSugerida } = resolverViajeMostrado(candidatosSentido[0])
+                const horario = reserva?.horario ?? horaSugerida ?? '—'
+                return (
+                  <Fragment key={claveSentido}>
+                    <tr className={tipo === 'subida' ? 'bg-emerald-50/70 border-y border-emerald-200/80' : 'bg-amber-50/70 border-y border-amber-200/80'}>
+                      <td colSpan={9} className={`py-1.5 px-3 font-semibold text-[11px] ${tipo === 'subida' ? 'text-emerald-800' : 'text-amber-800'}`}>
+                        {tipo === 'subida' ? '▲ Subida / Hacia Faena' : '▼ Bajada / Retorno'} ({origenMostrado} → {destinoMostrado} · {horario})
+                      </td>
+                    </tr>
+                    {candidatosSentido.map(renderGrupo)}
+                  </Fragment>
+                )
+              })}
+            </tbody>
           </table>
         )}
       </div>
@@ -552,6 +628,22 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       </div>
     )
   }
+
+  // Un cluster (todo el grupo de Fecha de Reserva, o un Grupo Webcontrol
+  // dentro de él — ver agruparPorGrupoWebcontrol) ordenado y agrupado por
+  // día (fecha de viaje real). prefijoClave identifica a qué cluster
+  // pertenece, para que las claves de subgrupo de más adentro sean
+  // únicas en toda la pantalla.
+  const renderDias = (lista: Candidato[], prefijoClave: string) => (
+    <div className="divide-y divide-slate-200">
+      {agruparPorFechaViaje(lista).map(([fechaViaje, candidatosDia]) => (
+        <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
+          <p className="text-xs font-bold text-slate-700 capitalize mb-2">{formatearFechaMedia(fechaViaje)}</p>
+          {renderTablaViaje(candidatosDia, `${prefijoClave}|${fechaViaje}`)}
+        </div>
+      ))}
+    </div>
+  )
 
   const tablaCabecera = (
     <thead>
@@ -663,28 +755,44 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                 </div>
               </div>
 
-              {/* Pedido explícito 2026-10-02: ordenado y agrupado primero
-                  por día (fecha de viaje real). Dentro de cada día, Suben y
-                  Bajan ya NO son secciones separadas — se agrupan juntos
-                  por Turno + Horario de Reserva Webcontrol (ver
-                  agruparPorTurnoHorario): la subida y la bajada de un
-                  mismo turno que comparten ese horario (ej. el viaje
-                  redondo de un turno con traslado diario) quedan en UN
-                  solo subgrupo colapsable, no en dos. La dirección de cada
-                  fila se distingue con el ▲/▼ junto a su Origen → Destino
-                  (ver renderGrupo). candidatosGrupo ya mezcla subida y
-                  bajada de este grupo (ver más arriba, usado también para
-                  el badge de confirmadas). */}
+              {/* Pedido explícito 2026-10-02: nivel más externo — Grupo
+                  Webcontrol (ver agruparPorGrupoWebcontrol), ej. "Turno H:
+                  Horario de Reserva Webcontrol 11:00". Agrupa configuraciones
+                  de distintas cuadrillas/turnos que comparten ese nombre
+                  (asignado en Configuraciones de viaje), sin importar el
+                  nombre real de cada una. Los candidatos sin grupo asignado
+                  (null) se muestran sueltos, sin este nivel extra. Dentro de
+                  cada uno, se ordena y agrupa por día (fecha de viaje real) —
+                  ver renderDias. */}
               {!colapsado && (
-                <div className="px-3 py-2 divide-y divide-slate-200">
-                  {agruparPorFechaViaje(candidatosGrupo).map(([fechaViaje, candidatosDia]) => (
-                    <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
-                      <p className="text-xs font-bold text-slate-700 capitalize mb-2">
-                        {formatearFechaMedia(fechaViaje)}
-                      </p>
-                      {renderTablaViaje(candidatosDia, `${claveGrupo}|${fechaViaje}`)}
-                    </div>
-                  ))}
+                <div className="px-3 py-2 space-y-2">
+                  {agruparPorGrupoWebcontrol(candidatosGrupo).map(([grupoWebcontrol, candidatosCluster]) => {
+                    if (grupoWebcontrol === null) {
+                      return <div key="sin-grupo-webcontrol">{renderDias(candidatosCluster, claveGrupo)}</div>
+                    }
+                    const claveNivel2 = `${claveGrupo}|grupoweb|${grupoWebcontrol}`
+                    const colapsadoNivel2 = subgruposColapsados.has(claveNivel2)
+                    const horarioWebcontrolNivel2 = resolverViajeMostrado(candidatosCluster[0]).horarioWebcontrol
+                    return (
+                      <div key={grupoWebcontrol} className="border border-slate-200 rounded-lg overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => alternarSubgrupoColapsado(claveNivel2)}
+                          aria-expanded={!colapsadoNivel2}
+                          className="flex items-center gap-2 select-none w-full px-3 py-2 bg-slate-50 hover:bg-slate-100"
+                        >
+                          <span className="text-slate-400 text-xs w-3 flex-shrink-0">{colapsadoNivel2 ? '▸' : '▾'}</span>
+                          <span className="text-xs font-bold text-slate-700">
+                            {grupoWebcontrol}: Horario de Reserva Webcontrol {horarioWebcontrolNivel2 ?? 'sin asignar'}
+                          </span>
+                          <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5">
+                            {candidatosCluster.length} {candidatosCluster.length === 1 ? 'persona' : 'personas'}
+                          </span>
+                        </button>
+                        {!colapsadoNivel2 && <div className="px-3 py-2">{renderDias(candidatosCluster, claveNivel2)}</div>}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
