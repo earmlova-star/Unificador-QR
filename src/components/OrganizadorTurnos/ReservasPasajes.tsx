@@ -483,9 +483,9 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
               {!colapsado && grupos.subida.length > 0 && (
                 <div className="px-3 py-2 border-b border-slate-100 last:border-b-0">
                   <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-2">▲ Suben ({grupos.subida.length})</p>
-                  <div className="space-y-3">
+                  <div className="divide-y divide-slate-200">
                     {agruparPorFechaViaje(grupos.subida).map(([fechaViaje, lista]) => (
-                      <div key={fechaViaje}>
+                      <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
                         <p className="text-[11px] font-semibold text-slate-500 capitalize mb-1">
                           {formatearFechaMedia(fechaViaje)} ({lista.length})
                         </p>
@@ -502,9 +502,9 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
               {!colapsado && grupos.bajada.length > 0 && (
                 <div className="px-3 py-2">
                   <p className="text-[10px] font-semibold text-amber-700 uppercase mb-2">▼ Bajan ({grupos.bajada.length})</p>
-                  <div className="space-y-3">
+                  <div className="divide-y divide-slate-200">
                     {agruparPorFechaViaje(grupos.bajada).map(([fechaViaje, lista]) => (
-                      <div key={fechaViaje}>
+                      <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
                         <p className="text-[11px] font-semibold text-slate-500 capitalize mb-1">
                           {formatearFechaMedia(fechaViaje)} ({lista.length})
                         </p>
