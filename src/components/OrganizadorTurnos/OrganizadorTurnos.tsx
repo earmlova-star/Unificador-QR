@@ -404,13 +404,18 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           </button>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
           <div className="inline-block min-w-full">
             {/* Encabezado del calendario: antes arrancaba después de una
                 columna "Cuadrilla / Dotación" de 192-384px; ahora que el
                 título de cada turno va en su propia banda arriba de sus
                 días (no al lado), los días parten directo del borde
-                izquierdo de la tabla (pedido explícito 2026-09-30). */}
+                izquierdo de la tabla (pedido explícito 2026-09-30).
+                "sticky top-0" (más abajo) necesita que ESTE div sea el que
+                de verdad hace scroll vertical — antes crecía sin límite de
+                alto y el que scrolleaba era un ancestro más arriba, así que
+                el sticky nunca tenía dentro de qué quedarse fijo (pedido
+                explícito 2026-10-01). */}
             <div className="flex border-b border-slate-200 sticky top-0 bg-white z-10">
               {columnasFecha.map((fecha, idx) => {
                 const mes = fecha.toLocaleDateString('es-CL', { month: 'short' })
