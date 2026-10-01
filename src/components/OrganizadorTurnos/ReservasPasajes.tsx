@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
 import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
@@ -172,6 +172,31 @@ function guardarGruposColapsados(grupos: Set<string>) {
   }
 }
 
+// Mismo patrón que CLAVE_GRUPOS_COLAPSADOS, pero para los subgrupos
+// Turno + Horario dentro de cada día (pedido explícito 2026-10-02) — ver
+// agruparPorTurnoHorario más abajo. Set aparte porque son dos niveles de
+// colapso independientes (colapsar el grupo del día no debería perder el
+// estado de sus subgrupos cuando se vuelve a expandir).
+const CLAVE_SUBGRUPOS_COLAPSADOS = 'unificador-qr:reservas-pasaje-subgrupos-colapsados'
+
+function leerSubgruposColapsadosGuardados(): Set<string> {
+  try {
+    const guardado = localStorage.getItem(CLAVE_SUBGRUPOS_COLAPSADOS)
+    if (guardado) return new Set(JSON.parse(guardado))
+  } catch {
+    // localStorage no disponible, o el valor guardado no es JSON válido — se parte con todo expandido.
+  }
+  return new Set()
+}
+
+function guardarSubgruposColapsados(subgrupos: Set<string>) {
+  try {
+    localStorage.setItem(CLAVE_SUBGRUPOS_COLAPSADOS, JSON.stringify([...subgrupos]))
+  } catch {
+    // localStorage no disponible — la elección solo dura esta sesión.
+  }
+}
+
 export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, inicioVentanaFecha, diasVentana, usuario }: ReservasPasajesProps) => {
   const [reservas, setReservas] = useState<ReservaPasaje[]>([])
   const [cargando, setCargando] = useState(false)
@@ -191,6 +216,19 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       if (siguiente.has(claveGrupo)) siguiente.delete(claveGrupo)
       else siguiente.add(claveGrupo)
       guardarGruposColapsados(siguiente)
+      return siguiente
+    })
+  }
+
+  // Subgrupos Turno + Horario colapsados — pedido explícito 2026-10-02.
+  const [subgruposColapsados, setSubgruposColapsados] = useState<Set<string>>(() => leerSubgruposColapsadosGuardados())
+
+  const alternarSubgrupoColapsado = (claveSubgrupo: string) => {
+    setSubgruposColapsados((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(claveSubgrupo)) siguiente.delete(claveSubgrupo)
+      else siguiente.add(claveSubgrupo)
+      guardarSubgruposColapsados(siguiente)
       return siguiente
     })
   }
@@ -381,7 +419,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // con configuración vigente, esta manda siempre (ver resolverViaje);
   // sin ella, se respeta lo ya guardado en su reserva, o el genérico si
   // todavía no se ha guardado nada. Compartido entre renderGrupo (la
-  // celda) y agruparPorOrigenDestino (para agrupar por lo mismo que se ve).
+  // celda) y horarioMostrado (para el subgrupo Turno + Horario).
   const resolverViajeMostrado = (c: Candidato) => {
     const reserva = reservaDe(c)
     const { origen, destino, horaSugerida, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
@@ -390,22 +428,35 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     return { reserva, origenMostrado, destinoMostrado, horaSugerida }
   }
 
-  // Pedido explícito 2026-10-02: dentro de cada fecha de viaje, además se
-  // agrupa por Origen → Destino (lo que de verdad se muestra en esa
-  // columna — ver resolverViajeMostrado), para separar con una banda
-  // gris cuándo cambia el tramo dentro de una misma fecha (ej. un turno
-  // con su propia ConfiguracionViaje mezclado con una subida suelta que
-  // va a un destino distinto). Mantiene el orden de aparición, no
-  // alfabético.
-  const agruparPorOrigenDestino = (lista: Candidato[]): [string, Candidato[]][] => {
+  // Horario que de verdad se ve en la fila de un candidato — el ya
+  // guardado si existe, si no el sugerido por su ConfiguracionViaje (igual
+  // que el valor inicial del input de la columna Horario). null si no hay
+  // ninguno de los dos todavía.
+  const horarioMostrado = (c: Candidato): string | null => {
+    const { reserva, horaSugerida } = resolverViajeMostrado(c)
+    return reserva?.horario ?? horaSugerida ?? null
+  }
+
+  // Pedido explícito 2026-10-02: "agrupemos y señalemos por horario
+  // dentro de un subgrupo colapsable" — reemplaza la banda gris por
+  // Origen → Destino de antes (ver git log) por un subgrupo real y
+  // colapsable, agrupado por Turno + Horario (en la práctica casi
+  // siempre determina también el Origen → Destino, porque ambos salen de
+  // la misma ConfiguracionViaje asignada al turno). Encabezado del
+  // subgrupo: "{Turno} - Horario de Reserva {hora}" — ver render más
+  // abajo. Ordenados por horario ascendente (sin horario, al final).
+  const agruparPorTurnoHorario = (lista: Candidato[]): [string, Candidato[]][] => {
     const mapa = new Map<string, Candidato[]>()
     for (const c of lista) {
-      const { origenMostrado, destinoMostrado } = resolverViajeMostrado(c)
-      const clave = `${origenMostrado} → ${destinoMostrado}`
+      const clave = `${c.cuadrillaNombre}||${horarioMostrado(c) ?? ''}`
       if (!mapa.has(clave)) mapa.set(clave, [])
       mapa.get(clave)!.push(c)
     }
-    return [...mapa.entries()]
+    return [...mapa.entries()].sort(([, a], [, b]) => {
+      const ha = horarioMostrado(a[0]) ?? 'zz:zz'
+      const hb = horarioMostrado(b[0]) ?? 'zz:zz'
+      return ha < hb ? -1 : ha > hb ? 1 : 0
+    })
   }
 
   const renderGrupo = (c: Candidato) => {
@@ -446,46 +497,57 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     )
   }
 
-  // Tabla de un sub-bloque Suben o Bajan dentro de un día (ver render más
-  // abajo) — agrupada por Origen → Destino con banda gris entre tramos
-  // distintos (pedido explícito 2026-10-02). Factorizada para no repetir
-  // esta lógica dos veces (una para Suben, otra para Bajan) dentro de
-  // cada día.
-  // Pedido explícito 2026-10-02: las marcadas "No considerada" van al
-  // final de la tabla (después de todos los grupos Origen → Destino
-  // activos), sin importar a qué tramo pertenezcan — separadas por la
-  // misma banda gris que ya se usa entre tramos.
-  const renderTablaViaje = (lista: Candidato[]) => {
+  // Un subgrupo Turno + Horario (ver agruparPorTurnoHorario) — colapsable
+  // de forma independiente del grupo del día que lo contiene, con el
+  // mismo estilo del grupo principal pero más chico. claveSubgrupo ya
+  // incluye el día y el tipo (Suben/Bajan) para que dos subgrupos con el
+  // mismo Turno + Horario en días distintos no compartan su colapso.
+  const renderSubgrupoTurnoHorario = (candidatosSubgrupo: Candidato[], claveSubgrupo: string) => {
+    const subColapsado = subgruposColapsados.has(claveSubgrupo)
+    const horario = horarioMostrado(candidatosSubgrupo[0])
+    return (
+      <div key={claveSubgrupo} className="border border-slate-200 rounded">
+        <button
+          type="button"
+          onClick={() => alternarSubgrupoColapsado(claveSubgrupo)}
+          aria-expanded={!subColapsado}
+          className="flex items-center gap-2 select-none w-full px-2 py-1.5 bg-slate-50 hover:bg-slate-100 rounded"
+        >
+          <span className="text-slate-400 text-xs w-3 flex-shrink-0">{subColapsado ? '▸' : '▾'}</span>
+          <span className="text-[11px] font-semibold text-slate-600">
+            {candidatosSubgrupo[0].cuadrillaNombre} - Horario de Reserva {horario ?? 'sin horario'}
+          </span>
+          <span className="text-[10px] text-slate-400">
+            ({candidatosSubgrupo.length} {candidatosSubgrupo.length === 1 ? 'persona' : 'personas'})
+          </span>
+        </button>
+        {!subColapsado && (
+          <table className="min-w-full text-xs">
+            {tablaCabecera}
+            <tbody className="divide-y divide-slate-100">{candidatosSubgrupo.map(renderGrupo)}</tbody>
+          </table>
+        )}
+      </div>
+    )
+  }
+
+  // Sub-bloque Suben o Bajan dentro de un día (ver render más abajo) —
+  // agrupado en subgrupos colapsables de Turno + Horario (pedido
+  // explícito 2026-10-02). Las marcadas "No considerada" van en sus
+  // propios subgrupos al final, después de todos los activos.
+  // prefijoClave identifica el día + tipo (Suben/Bajan) al que pertenece
+  // esta tabla, para que las claves de subgrupo sean únicas en toda la
+  // pantalla.
+  const renderTablaViaje = (lista: Candidato[], prefijoClave: string) => {
     const activos = lista.filter((c) => !(reservaDe(c)?.no_considerada ?? false))
     const noConsiderados = lista.filter((c) => reservaDe(c)?.no_considerada ?? false)
-    const gruposActivos = agruparPorOrigenDestino(activos)
-    const gruposNoConsiderados = agruparPorOrigenDestino(noConsiderados)
     return (
-      <table className="min-w-full text-xs">
-        {tablaCabecera}
-        <tbody className="divide-y divide-slate-100">
-          {gruposActivos.map(([origenDestino, candidatosGrupo], idx) => (
-            <Fragment key={origenDestino}>
-              {idx > 0 && (
-                <tr>
-                  <td colSpan={9} className="bg-slate-100 h-2 p-0" />
-                </tr>
-              )}
-              {candidatosGrupo.map(renderGrupo)}
-            </Fragment>
-          ))}
-          {gruposNoConsiderados.map(([origenDestino, candidatosGrupo], idx) => (
-            <Fragment key={`no-considerada-${origenDestino}`}>
-              {(idx > 0 || gruposActivos.length > 0) && (
-                <tr>
-                  <td colSpan={9} className="bg-slate-100 h-2 p-0" />
-                </tr>
-              )}
-              {candidatosGrupo.map(renderGrupo)}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+      <div className="space-y-2">
+        {agruparPorTurnoHorario(activos).map(([clave, grupo]) => renderSubgrupoTurnoHorario(grupo, `${prefijoClave}|${clave}`))}
+        {agruparPorTurnoHorario(noConsiderados).map(([clave, grupo]) =>
+          renderSubgrupoTurnoHorario(grupo, `${prefijoClave}|no-considerada|${clave}`)
+        )}
+      </div>
     )
   }
 
@@ -619,13 +681,13 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                         {subidaDia.length > 0 && (
                           <div className="mb-3 last:mb-0">
                             <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-2">▲ Suben ({subidaDia.length})</p>
-                            {renderTablaViaje(subidaDia)}
+                            {renderTablaViaje(subidaDia, `${claveGrupo}|${fechaViaje}|subida`)}
                           </div>
                         )}
                         {bajadaDia.length > 0 && (
                           <div>
                             <p className="text-[10px] font-semibold text-amber-700 uppercase mb-2">▼ Bajan ({bajadaDia.length})</p>
-                            {renderTablaViaje(bajadaDia)}
+                            {renderTablaViaje(bajadaDia, `${claveGrupo}|${fechaViaje}|bajada`)}
                           </div>
                         )}
                       </div>
