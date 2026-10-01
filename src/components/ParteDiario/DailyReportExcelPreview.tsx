@@ -8,6 +8,7 @@ import {
   ParteDiario,
 } from '@/types/index'
 import { descargarBlob, generarExcelParteDiario, nombreArchivoParteDiario } from '@lib/generarExcelParteDiario'
+import { descripcionConHorario } from '@lib/actividades'
 import { useState } from 'react'
 import { traducirError } from '@lib/errores'
 
@@ -173,7 +174,7 @@ export const DailyReportExcelPreview = ({ parte, contrato, onCerrar }: DailyRepo
                 {Array.from({ length: 7 }, (_, i) => parte.actividades[i]).map((a, i) => (
                   <tr key={i}>
                     <td className={celdaTexto}>{a?.area ?? ''}</td>
-                    <td className={celdaTexto}>{a?.descripcion ?? ''}</td>
+                    <td className={celdaTexto}>{a ? descripcionConHorario(a) : ''}</td>
                     <td className={celdaNum}>{a?.cantidad ?? ''}</td>
                   </tr>
                 ))}

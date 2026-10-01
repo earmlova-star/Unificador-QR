@@ -22,6 +22,7 @@ import { useAutoguardado, leerBorrador, haceCuanto } from '@hooks/useBorradorLoc
 import { hhDeFila, hhTotales, permisoDescanso } from '@lib/calculosHH'
 import {
   actividadesValidas,
+  calcularHHActividad,
   horasDirectaPorActividad,
   horasMaquinariaCalculadas,
   horasMaquinariaPorActividad,
@@ -53,7 +54,7 @@ const MAX_ACTIVIDADES = 7
 // (J9 del Excel) y el multiplicador de HH Total de Fuerza laboral
 // indirecta — antes fijo en 10/11 para todos, ahora depende de la faena.
 
-const actividadVacia = (): ActividadEjecutada => ({ area: '', descripcion: '', cantidad: null })
+const actividadVacia = (): ActividadEjecutada => ({ area: '', horaInicio: '', horaFin: '', descripcion: '', cantidad: null })
 
 // El campo "Cantidad" de Actividades Ejecutadas ahora guarda las HH que
 // dura esa actividad en particular (ej: 0,5) — no una cantidad de items.
@@ -345,13 +346,21 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
   }, [contrato?.id, editando])
 
   // ---------- Actividades ----------
-  const actualizarActividad = (index: number, campo: keyof ActividadEjecutada, valor: string) => {
+  // "Cantidad" (HH) ya no se tipea a mano: se deriva sola de Hora Inicio/
+  // Hora Fin apenas ambas quedan completas (ver calcularHHActividad). Una
+  // fila de un reporte guardado antes de este campo, que todavía no tiene
+  // horas cargadas, conserva su "cantidad" de siempre hasta que alguien
+  // empiece a completarlas acá.
+  const actualizarActividad = (index: number, campo: 'area' | 'horaInicio' | 'horaFin' | 'descripcion', valor: string) => {
     setActividades((prev) =>
-      prev.map((act, i) =>
-        i === index
-          ? { ...act, [campo]: campo === 'cantidad' ? (valor === '' ? null : Number(valor)) : valor }
-          : act
-      )
+      prev.map((act, i) => {
+        if (i !== index) return act
+        const actualizada = { ...act, [campo]: valor }
+        if (campo === 'horaInicio' || campo === 'horaFin') {
+          actualizada.cantidad = calcularHHActividad(actualizada.horaInicio, actualizada.horaFin)
+        }
+        return actualizada
+      })
     )
   }
   const agregarActividad = () => {
@@ -1058,30 +1067,42 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         </div>
         <div className="space-y-2">
           {actividades.map((actividad, index) => (
-            <div key={index} className="grid grid-cols-1 sm:grid-cols-[24px_1fr_2fr_100px_32px] gap-2 items-center">
+            <div key={index} className="grid grid-cols-1 sm:grid-cols-[24px_1fr_84px_84px_2fr_64px_32px] gap-2 items-center">
               <span className="text-xs font-mono text-slate-400 text-center">{index + 1}</span>
               <input
                 type="text"
-                placeholder="Área"
+                placeholder="Área (ej. Seguridad, SAR-1, IIFF)"
                 value={actividad.area}
                 onChange={(e) => actualizarActividad(index, 'area', e.target.value)}
                 className={inputClase}
               />
               <input
+                type="time"
+                title="Hora de inicio"
+                value={actividad.horaInicio ?? ''}
+                onChange={(e) => actualizarActividad(index, 'horaInicio', e.target.value)}
+                className={inputClase}
+              />
+              <input
+                type="time"
+                title="Hora de término"
+                value={actividad.horaFin ?? ''}
+                onChange={(e) => actualizarActividad(index, 'horaFin', e.target.value)}
+                className={inputClase}
+              />
+              <input
                 type="text"
-                placeholder="Descripción"
+                placeholder="Descripción de la actividad realizada"
                 value={actividad.descripcion}
                 onChange={(e) => actualizarActividad(index, 'descripcion', e.target.value)}
                 className={inputClase}
               />
               <input
-                type="number"
-                step="0.1"
-                placeholder="HH x actividad"
-                title="Horas que dura esta actividad en particular (ej: 0,5) — se usa para calcular las HH de Fuerza laboral directa."
+                type="text"
+                readOnly
+                title="HH que dura esta actividad — se calcula solo desde Hora Inicio y Hora Fin."
                 value={actividad.cantidad ?? ''}
-                onChange={(e) => actualizarActividad(index, 'cantidad', e.target.value)}
-                className={inputNumClase}
+                className={inputNumClase + ' bg-slate-50 text-slate-500 cursor-not-allowed'}
               />
               <button
                 type="button"
@@ -1099,9 +1120,9 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         {/* Suma de HH x actividad — solo visualización + control interno
             para el bloqueo de envío (ver HH_TURNO_POR_FAENA, el mínimo
             depende de la faena elegida arriba). No es una celda del Excel. */}
-        <div className="grid grid-cols-1 sm:grid-cols-[24px_1fr_2fr_100px_32px] gap-2 items-center mt-2 pt-2 border-t border-slate-200">
+        <div className="grid grid-cols-1 sm:grid-cols-[24px_1fr_84px_84px_2fr_64px_32px] gap-2 items-center mt-2 pt-2 border-t border-slate-200">
           <span />
-          <span className="sm:col-span-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          <span className="sm:col-span-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Total HH x actividad
           </span>
           <span

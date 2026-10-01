@@ -244,6 +244,13 @@ export const HH_TURNO_POR_FAENA: Record<Faena, number> = {
 
 export interface ActividadEjecutada {
   area: string;
+  // Hora de inicio/fin ("HH:mm") de la actividad — opcionales porque los
+  // reportes guardados antes de este campo no las tienen; "cantidad" (HH)
+  // se calcula solo desde acá una vez que ambas están presentes (ver
+  // calcularHHActividad en lib/actividades.ts), y hasta entonces conserva
+  // el valor que ya tuviera guardado.
+  horaInicio?: string | null;
+  horaFin?: string | null;
   descripcion: string;
   cantidad: number | null;
 }

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   actividadesValidas,
+  calcularHHActividad,
+  descripcionConHorario,
   horasDirectaPorActividad,
   horasMaquinariaPorActividad,
   indicesActividadesValidas,
@@ -133,5 +135,42 @@ describe('quitarActividad', () => {
 
     expect(actividadesResultado).toHaveLength(5)
     expect(actividadesResultado.map((v) => v ?? false)).toEqual([false, false, false, false, true])
+  })
+})
+
+describe('calcularHHActividad', () => {
+  it('calcula la diferencia en horas decimales', () => {
+    expect(calcularHHActividad('08:00', '08:30')).toBe(0.5)
+    expect(calcularHHActividad('08:30', '10:30')).toBe(2)
+    expect(calcularHHActividad('09:00', '09:45')).toBe(0.75)
+  })
+
+  it('da 0 si falta la hora de inicio o la de fin', () => {
+    expect(calcularHHActividad('', '08:30')).toBe(0)
+    expect(calcularHHActividad('08:00', '')).toBe(0)
+    expect(calcularHHActividad(null, undefined)).toBe(0)
+  })
+
+  it('da 0 ante una hora no interpretable', () => {
+    expect(calcularHHActividad('abc', '08:30')).toBe(0)
+  })
+
+  it('interpreta un fin menor que el inicio como que cruzó la medianoche', () => {
+    expect(calcularHHActividad('22:00', '02:00')).toBe(4)
+  })
+})
+
+describe('descripcionConHorario', () => {
+  it('antepone el horario a la descripción cuando ambas horas están presentes', () => {
+    expect(descripcionConHorario({ horaInicio: '08:00', horaFin: '08:30', descripcion: 'Charla diaria de seguridad' })).toBe(
+      '08:00 - 08:30: Charla diaria de seguridad'
+    )
+  })
+
+  it('deja solo la descripción si falta cualquiera de las dos horas (reporte guardado antes de este campo)', () => {
+    expect(descripcionConHorario({ descripcion: 'Planificación de trabajos' })).toBe('Planificación de trabajos')
+    expect(descripcionConHorario({ horaInicio: '08:00', descripcion: 'Planificación de trabajos' })).toBe(
+      'Planificación de trabajos'
+    )
   })
 })

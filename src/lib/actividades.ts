@@ -31,6 +31,40 @@ export function actividadesValidas(actividades: ActividadEjecutada[]): Actividad
   return actividades.filter(tieneContenido)
 }
 
+/**
+ * HH que dura una actividad, calculadas desde su hora de inicio y fin
+ * ("HH:mm"). Si falta cualquiera de las dos, o no se puede interpretar
+ * como hora, da 0 — no bloquea nada, la fila simplemente no suma HH hasta
+ * que se completen ambas. Un fin menor que el inicio se interpreta como
+ * que la actividad cruzó la medianoche (termina al día siguiente), no
+ * como un error.
+ */
+export function calcularHHActividad(horaInicio: string | null | undefined, horaFin: string | null | undefined): number {
+  if (!horaInicio || !horaFin) return 0
+  const [h1, m1] = horaInicio.split(':').map(Number)
+  const [h2, m2] = horaFin.split(':').map(Number)
+  if ([h1, m1, h2, m2].some((n) => Number.isNaN(n))) return 0
+
+  let totalMinutos = (h2 * 60 + m2) - (h1 * 60 + m1)
+  if (totalMinutos < 0) totalMinutos += 24 * 60
+
+  return Math.round((totalMinutos / 60) * 100) / 100
+}
+
+/**
+ * Texto de la columna "Descripción" del reporte (pantalla y Excel): si la
+ * actividad tiene hora de inicio y fin, antepone "HH:MM - HH:MM: " a la
+ * descripción (formato del reporte oficial). Si falta cualquiera de las
+ * dos (reportes guardados antes de este campo), queda solo la descripción,
+ * como siempre.
+ */
+export function descripcionConHorario(actividad: Pick<ActividadEjecutada, 'horaInicio' | 'horaFin' | 'descripcion'>): string {
+  if (actividad.horaInicio && actividad.horaFin) {
+    return `${actividad.horaInicio} - ${actividad.horaFin}: ${actividad.descripcion}`
+  }
+  return actividad.descripcion
+}
+
 /** Cuadrilla de Fuerza Laboral Directa — ver CuadrillaManoObra en types/index.ts. */
 interface CuadrillaParaCalculo {
   operativos: number

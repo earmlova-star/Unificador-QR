@@ -9,6 +9,7 @@ import {
   ParteDiario,
   UserRole,
 } from '@/types/index'
+import { descripcionConHorario } from '@lib/actividades'
 
 // Genera el Daily Report en Excel EXACTAMENTE con el formato original: se
 // abre la plantilla en blanco (public/plantillas/DR000_12501191.xlsx, la
@@ -610,7 +611,7 @@ export async function generarExcelParteDiario(parte: ParteDiario): Promise<Blob>
   parte.actividades.slice(0, 7).forEach((actividad, i) => {
     const fila = FILA_INICIO_ACTIVIDADES + i
     hojaDR.getCell(`C${fila}`).value = actividad.area
-    hojaDR.getCell(`E${fila}`).value = actividad.descripcion
+    hojaDR.getCell(`E${fila}`).value = descripcionConHorario(actividad)
     if (actividad.cantidad != null) hojaDR.getCell(`N${fila}`).value = actividad.cantidad
   })
 
