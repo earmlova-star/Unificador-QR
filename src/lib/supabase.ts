@@ -1136,6 +1136,15 @@ export const db = {
     if (error) throw error
   },
 
+  // Elimina varios eventos_transito de una vez (ej. todas las fechas de
+  // un grupo de Subidas/Bajadas sueltas unificadas en la carta Gantt —
+  // ver agruparEventos.ts). Un solo DELETE ... WHERE id IN (...) ya es
+  // atómico por sí mismo, sin necesidad de un RPC aparte.
+  async eliminarEventosTransito(ids: string[]) {
+    const { error } = await supabase.from('eventos_transito').delete().in('id', ids)
+    if (error) throw error
+  },
+
   async agregarTrabajadorEventoTransito(trabajador: { evento_id: string; nombre: string; apellido: string; rut: string; cargo: string }) {
     const { data, error } = await supabase.from('eventos_transito_trabajadores').insert([trabajador]).select().single()
     if (error) throw error

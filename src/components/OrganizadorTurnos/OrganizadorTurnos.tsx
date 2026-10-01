@@ -3,6 +3,7 @@ import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
 import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
+import { agruparEventosTransito } from './lib/agruparEventos'
 import { PRESETS_TURNO, PatronTurno } from './lib/presetsTurno'
 import { CALENDARIO_INICIO, TAMANO_VENTANA, enInicioDeRango, enFinDeRango, limitarInicioVentana, sumarDias } from './lib/rangoFechas'
 import { esFeriado, nombreFeriado } from './lib/feriados'
@@ -212,6 +213,27 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       setEventosTransito((prev) => prev.filter((e) => e.id !== evento.id))
     } catch (err) {
       setError(traducirError(err, `No se pudo eliminar la ${etiqueta.toLowerCase()}`))
+    }
+  }
+
+  // Elimina TODAS las fechas de un grupo unificado de Subidas/Bajadas
+  // sueltas (ver agruparEventos.ts) de una sola vez — distinto de
+  // eliminarEvento, que borra solo la fecha puntual con la que se abrió
+  // el menú contextual de una celda del día.
+  const eliminarGrupoEventos = async (eventos: EventoTransito[]) => {
+    const etiqueta = eventos[0].tipo === 'subida' ? 'Subida' : 'Bajada'
+    const fechas = eventos.map((e) => e.fecha).join(', ')
+    const ok = window.confirm(
+      `¿Eliminar las ${eventos.length} fechas de ${etiqueta.toLowerCase()} suelta de este grupo (${fechas})? Esta acción no se puede deshacer.`
+    )
+    if (!ok) return
+    setError(null)
+    try {
+      const ids = eventos.map((e) => e.id)
+      await db.eliminarEventosTransito(ids)
+      setEventosTransito((prev) => prev.filter((e) => !ids.includes(e.id)))
+    } catch (err) {
+      setError(traducirError(err, `No se pudo eliminar el grupo de ${etiqueta.toLowerCase()}s`))
     }
   }
 
@@ -596,36 +618,39 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                 <div className="px-3 sm:px-4 py-1.5 bg-slate-50 border-b border-t border-slate-200 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                   Subidas / Bajadas sueltas
                 </div>
-                {eventosTransito.map((evento) => {
-                  const etiquetaTipo = evento.tipo === 'subida' ? 'Subida' : 'Bajada'
+                {agruparEventosTransito(eventosTransito).map((grupo) => {
+                  const etiquetaTipo = grupo.tipo === 'subida' ? 'Subida' : 'Bajada'
+                  // Acciones "representativas" de la fila (trabajadores,
+                  // +👤) apuntan al evento más antiguo del grupo — por
+                  // definición del agrupamiento todos comparten los
+                  // mismos trabajadores, así que editar ahí refleja al
+                  // grupo entero salvo que luego diverjan a mano.
+                  const eventoRepresentativo = grupo.eventos[0]
                   return (
-                    <Fragment key={evento.id}>
-                      <div
-                        className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors"
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          setMenuContextual({ tipo: 'evento', eventoId: evento.id, x: e.clientX, y: e.clientY })
-                        }}
-                      >
+                    <Fragment key={grupo.clave}>
+                      <div className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 sm:px-4 py-2 bg-slate-100">
                           <div className="flex items-center gap-2 min-w-0">
                             <h3 className="font-semibold text-sm text-slate-800 truncate">
-                              {evento.tipo === 'subida' ? '▲' : '▼'} {etiquetaTipo} suelta
+                              {grupo.tipo === 'subida' ? '▲' : '▼'} {etiquetaTipo} suelta
+                              {grupo.eventos.length > 1 && (
+                                <span className="ml-1 font-normal text-slate-400">({grupo.eventos.length} fechas)</span>
+                              )}
                             </h3>
                             <button
                               type="button"
-                              onClick={() => setEventoTrabajadoresId(evento.id)}
+                              onClick={() => setEventoTrabajadoresId(eventoRepresentativo.id)}
                               title="Ver, editar, agregar o eliminar funcionarios de esta subida/bajada"
                               className="text-xs text-slate-500 hover:text-blue-600 hover:underline flex-shrink-0"
                             >
-                              {evento.trabajadores.length} trabajadores
+                              {grupo.trabajadores.length} trabajadores
                             </button>
                           </div>
 
                           <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                             <button
                               type="button"
-                              onClick={() => setEventoFuncionarioId(evento.id)}
+                              onClick={() => setEventoFuncionarioId(eventoRepresentativo.id)}
                               title="Agregar funcionario"
                               className="p-1 hover:bg-slate-200 rounded text-slate-600"
                             >
@@ -633,8 +658,8 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                             </button>
                             <button
                               type="button"
-                              onClick={() => eliminarEvento(evento)}
-                              title={`Eliminar ${etiquetaTipo.toLowerCase()}`}
+                              onClick={() => eliminarGrupoEventos(grupo.eventos)}
+                              title={grupo.eventos.length > 1 ? `Eliminar las ${grupo.eventos.length} fechas de este grupo` : `Eliminar ${etiquetaTipo.toLowerCase()}`}
                               className="p-1 hover:bg-slate-200 rounded text-red-600"
                             >
                               🗑
@@ -645,18 +670,28 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         <div className="flex items-center">
                           {columnasFecha.map((fecha, idx) => {
                             const fechaStr = fecha.toISOString().split('T')[0]
-                            const esElDia = fechaStr === evento.fecha
+                            // Puede haber a lo más un evento del grupo en
+                            // cada fecha (un evento_transito es siempre
+                            // una fecha única) — se usa para la celda de
+                            // ESE día puntual (resaltado, tooltip, y el
+                            // menú contextual para borrar solo esa fecha).
+                            const eventoDelDia = grupo.eventos.find((e) => e.fecha === fechaStr)
                             return (
                               <div
                                 key={idx}
                                 onMouseEnter={() => setColumnaHover(idx)}
                                 onMouseLeave={() => setColumnaHover((c) => (c === idx ? null : c))}
+                                onContextMenu={(e) => {
+                                  if (!eventoDelDia) return
+                                  e.preventDefault()
+                                  setMenuContextual({ tipo: 'evento', eventoId: eventoDelDia.id, x: e.clientX, y: e.clientY })
+                                }}
                                 className={`relative w-12 h-10 border-r border-slate-100 flex items-center justify-center text-[10px] font-bold select-none ${
-                                  esElDia ? 'bg-amber-800 text-white' : 'bg-white'
+                                  eventoDelDia ? 'bg-amber-800 text-white' : 'bg-white'
                                 }`}
-                                title={esElDia ? `${etiquetaTipo} suelta | ${evento.fecha}` : undefined}
+                                title={eventoDelDia ? `${etiquetaTipo} suelta | ${fechaStr} — clic derecho para eliminar solo esta fecha` : undefined}
                               >
-                                {esElDia && (evento.tipo === 'subida' ? '▲' : '▼')}
+                                {eventoDelDia && (grupo.tipo === 'subida' ? '▲' : '▼')}
                                 {esFeriado(fecha) && <div className="absolute inset-0 bg-yellow-200/50 pointer-events-none" />}
                                 {columnaHover === idx && <div className="absolute inset-0 bg-emerald-300/40 pointer-events-none" />}
                               </div>
