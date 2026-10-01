@@ -11,6 +11,7 @@ import { ModalAgregarTurno } from './ModalAgregarTurno'
 import { ModalEditarTurno } from './ModalEditarTurno'
 import { ModalAgregarFuncionario } from './ModalAgregarFuncionario'
 import { ModalAgregarEventoTransito } from './ModalAgregarEventoTransito'
+import { ModalEditarEventoTransito } from './ModalEditarEventoTransito'
 import { ModalAgregarFuncionarioEvento } from './ModalAgregarFuncionarioEvento'
 import { ModalConfiguracionesViaje } from './ModalConfiguracionesViaje'
 import { ModalTrabajadores } from './ModalTrabajadores'
@@ -52,6 +53,10 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   // para un evento ya creado.
   const [modalEvento, setModalEvento] = useState<'subida' | 'bajada' | undefined>(undefined)
   const [eventoFuncionarioId, setEventoFuncionarioId] = useState<string | undefined>(undefined)
+  // Grupo (ver agruparEventos.ts) que se está editando — pedido explícito
+  // 2026-10-02: "editar las bajadas y subidas sueltas al igual que los
+  // turnos predefinidos" (ver ModalEditarEventoTransito.tsx).
+  const [grupoEventoEditando, setGrupoEventoEditando] = useState<EventoTransito[] | null>(null)
   const [modalConfiguraciones, setModalConfiguraciones] = useState(false)
 
   const [arrastrandoId, setArrastrandoId] = useState<string | null>(null)
@@ -650,6 +655,14 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                           <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                             <button
                               type="button"
+                              onClick={() => setGrupoEventoEditando(grupo.eventos)}
+                              title={`Editar ${etiquetaTipo.toLowerCase()} suelta`}
+                              className="p-1 hover:bg-slate-200 rounded text-blue-600"
+                            >
+                              ✎
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setEventoFuncionarioId(eventoRepresentativo.id)}
                               title="Agregar funcionario"
                               className="p-1 hover:bg-slate-200 rounded text-slate-600"
@@ -836,6 +849,25 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           usuario={usuario}
           onCerrar={() => setModalEvento(undefined)}
           onCreado={(nuevos) => { setEventosTransito((prev) => [...prev, ...nuevos]); setModalEvento(undefined) }}
+        />
+      )}
+
+      {grupoEventoEditando && (
+        <ModalEditarEventoTransito
+          eventos={grupoEventoEditando}
+          configuraciones={configuraciones}
+          usuario={usuario}
+          onCerrar={() => setGrupoEventoEditando(null)}
+          onGuardado={({ actualizados, creados, eliminadosIds }) => {
+            setEventosTransito((prev) => {
+              let siguiente = prev
+              if (eliminadosIds.length > 0) siguiente = siguiente.filter((e) => !eliminadosIds.includes(e.id))
+              if (actualizados.length > 0) siguiente = siguiente.map((e) => actualizados.find((a) => a.id === e.id) ?? e)
+              if (creados.length > 0) siguiente = [...siguiente, ...creados]
+              return siguiente
+            })
+            setGrupoEventoEditando(null)
+          }}
         />
       )}
 

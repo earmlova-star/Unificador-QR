@@ -511,6 +511,11 @@ export interface ReservaPasaje {
   confirmada_por?: string | null;
   confirmada_en?: string | null;
 
+  // Pedido explícito 2026-10-02: reserva descartada (no se va a tomar) —
+  // independiente de `confirmada`. Se muestra en gris y al final de la
+  // tabla, ver ReservasPasajes.tsx.
+  no_considerada: boolean;
+
   encargado_reserva?: string | null;
   // Fecha en que se hizo/asignó la reserva — distinta de `fecha` (la de
   // subida/bajada del trabajador). Pedido explícito 2026-09-24: un solo

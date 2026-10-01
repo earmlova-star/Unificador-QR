@@ -1145,6 +1145,18 @@ export const db = {
     if (error) throw error
   },
 
+  // Cambia la Configuración de viaje de varios eventos_transito de una
+  // vez (ej. todas las fechas que quedan de un grupo al editarlo — ver
+  // ModalEditarEventoTransito.tsx). Mismo UPDATE ... WHERE id IN (...)
+  // que eliminarEventosTransito: atómico por sí mismo.
+  async actualizarConfiguracionEventosTransito(ids: string[], configuracionId: string | null) {
+    const { error } = await supabase
+      .from('eventos_transito')
+      .update({ configuracion_id: configuracionId, updated_at: new Date().toISOString() })
+      .in('id', ids)
+    if (error) throw error
+  },
+
   async agregarTrabajadorEventoTransito(trabajador: { evento_id: string; nombre: string; apellido: string; rut: string; cargo: string }) {
     const { data, error } = await supabase.from('eventos_transito_trabajadores').insert([trabajador]).select().single()
     if (error) throw error
@@ -1239,6 +1251,7 @@ export const db = {
     confirmada: boolean
     confirmada_por: string | null
     confirmada_en: string | null
+    no_considerada: boolean
     encargado_reserva: string | null
     fecha_reserva: string | null
     observaciones: string | null
@@ -1270,6 +1283,7 @@ export const db = {
       confirmada: boolean
       confirmada_por: string | null
       confirmada_en: string | null
+      no_considerada: boolean
       encargado_reserva: string | null
       fecha_reserva: string | null
       observaciones: string | null

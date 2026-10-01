@@ -230,7 +230,10 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   const guardar = async (
     c: Candidato,
     cambios: Partial<
-      Pick<ReservaPasaje, 'horario' | 'confirmada' | 'confirmada_por' | 'confirmada_en' | 'encargado_reserva' | 'fecha_reserva' | 'observaciones'>
+      Pick<
+        ReservaPasaje,
+        'horario' | 'confirmada' | 'confirmada_por' | 'confirmada_en' | 'no_considerada' | 'encargado_reserva' | 'fecha_reserva' | 'observaciones'
+      >
     >
   ) => {
     const existente = reservaDe(c)
@@ -269,6 +272,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
           confirmada: false,
           confirmada_por: null,
           confirmada_en: null,
+          no_considerada: false,
           encargado_reserva: null,
           fecha_reserva: null,
           observaciones: null,
@@ -319,6 +323,14 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       confirmada_por: nueva ? usuario.id : null,
       confirmada_en: nueva ? new Date().toISOString() : null,
     })
+  }
+
+  // Pedido explícito 2026-10-02: "Reserva no considerada" — se descarta,
+  // independiente de si está confirmada o no (ver renderGrupo/
+  // renderTablaViaje para el gris y el orden al final).
+  const alternarNoConsiderada = (c: Candidato) => {
+    const actual = reservaDe(c)?.no_considerada ?? false
+    guardar(c, { no_considerada: !actual })
   }
 
   // Agrupa por Fecha de Reserva (con fallback a la fecha de viaje — ver
@@ -398,8 +410,9 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
 
   const renderGrupo = (c: Candidato) => {
     const { reserva, origenMostrado, destinoMostrado, horaSugerida } = resolverViajeMostrado(c)
+    const noConsiderada = reserva?.no_considerada ?? false
     return (
-      <tr key={c.clave} className={reserva?.confirmada ? 'bg-green-50/40' : ''}>
+      <tr key={c.clave} className={noConsiderada ? 'bg-slate-100 text-slate-400' : reserva?.confirmada ? 'bg-green-50/40' : ''}>
         <td className="px-3 py-1.5 text-slate-800 whitespace-nowrap">{c.trabajador.nombre} {c.trabajador.apellido}</td>
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.trabajador.rut}</td>
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.cuadrillaNombre}</td>
@@ -426,6 +439,9 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         <td className="px-3 py-1.5 text-center">
           <input type="checkbox" checked={reserva?.confirmada ?? false} onChange={() => alternarConfirmada(c)} className="w-4 h-4" />
         </td>
+        <td className="px-3 py-1.5 text-center">
+          <input type="checkbox" checked={noConsiderada} onChange={() => alternarNoConsiderada(c)} className="w-4 h-4" />
+        </td>
       </tr>
     )
   }
@@ -435,23 +451,43 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // distintos (pedido explícito 2026-10-02). Factorizada para no repetir
   // esta lógica dos veces (una para Suben, otra para Bajan) dentro de
   // cada día.
-  const renderTablaViaje = (lista: Candidato[]) => (
-    <table className="min-w-full text-xs">
-      {tablaCabecera}
-      <tbody className="divide-y divide-slate-100">
-        {agruparPorOrigenDestino(lista).map(([origenDestino, candidatosGrupo], idx) => (
-          <Fragment key={origenDestino}>
-            {idx > 0 && (
-              <tr>
-                <td colSpan={8} className="bg-slate-100 h-2 p-0" />
-              </tr>
-            )}
-            {candidatosGrupo.map(renderGrupo)}
-          </Fragment>
-        ))}
-      </tbody>
-    </table>
-  )
+  // Pedido explícito 2026-10-02: las marcadas "No considerada" van al
+  // final de la tabla (después de todos los grupos Origen → Destino
+  // activos), sin importar a qué tramo pertenezcan — separadas por la
+  // misma banda gris que ya se usa entre tramos.
+  const renderTablaViaje = (lista: Candidato[]) => {
+    const activos = lista.filter((c) => !(reservaDe(c)?.no_considerada ?? false))
+    const noConsiderados = lista.filter((c) => reservaDe(c)?.no_considerada ?? false)
+    const gruposActivos = agruparPorOrigenDestino(activos)
+    const gruposNoConsiderados = agruparPorOrigenDestino(noConsiderados)
+    return (
+      <table className="min-w-full text-xs">
+        {tablaCabecera}
+        <tbody className="divide-y divide-slate-100">
+          {gruposActivos.map(([origenDestino, candidatosGrupo], idx) => (
+            <Fragment key={origenDestino}>
+              {idx > 0 && (
+                <tr>
+                  <td colSpan={9} className="bg-slate-100 h-2 p-0" />
+                </tr>
+              )}
+              {candidatosGrupo.map(renderGrupo)}
+            </Fragment>
+          ))}
+          {gruposNoConsiderados.map(([origenDestino, candidatosGrupo], idx) => (
+            <Fragment key={`no-considerada-${origenDestino}`}>
+              {(idx > 0 || gruposActivos.length > 0) && (
+                <tr>
+                  <td colSpan={9} className="bg-slate-100 h-2 p-0" />
+                </tr>
+              )}
+              {candidatosGrupo.map(renderGrupo)}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    )
+  }
 
   const tablaCabecera = (
     <thead>
@@ -464,6 +500,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         <th className="text-left font-semibold px-3 pb-1">Horario</th>
         <th className="text-left font-semibold px-3 pb-1">Observaciones</th>
         <th className="text-center font-semibold px-3 pb-1">Confirmada</th>
+        <th className="text-center font-semibold px-3 pb-1">No considerada</th>
       </tr>
     </thead>
   )
