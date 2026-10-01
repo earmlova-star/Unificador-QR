@@ -978,6 +978,7 @@ export const db = {
     patron_dias_trabajo: number
     patron_dias_descanso: number
     patron_incluye_subida: boolean
+    patron_traslado_diario: boolean
     fecha_inicio: string
     color_tema: string
     orden: number
@@ -1003,6 +1004,7 @@ export const db = {
       patron_dias_trabajo: number
       patron_dias_descanso: number
       patron_incluye_subida: boolean
+      patron_traslado_diario: boolean
       fecha_inicio: string
       color_tema: string
       config_subida_id: string | null
@@ -1016,6 +1018,7 @@ export const db = {
       p_patron_dias_trabajo: cambios.patron_dias_trabajo,
       p_patron_dias_descanso: cambios.patron_dias_descanso,
       p_patron_incluye_subida: cambios.patron_incluye_subida,
+      p_patron_traslado_diario: cambios.patron_traslado_diario,
       p_fecha_inicio: cambios.fecha_inicio,
       p_color_tema: cambios.color_tema,
       p_config_subida_id: cambios.config_subida_id,

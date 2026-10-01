@@ -554,6 +554,8 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                             ? `${cuadrilla.nombre} | ${seg.fecha} : Turno aún no iniciado`
                             : seg.tipo === 'BAJADA'
                             ? `${cuadrilla.nombre} | ${seg.fecha} : Bajada (${seg.etiqueta})`
+                            : seg.tipo === 'SUBIDA_BAJADA'
+                            ? `${cuadrilla.nombre} | ${seg.fecha} : Traslado diario — sube y baja (${seg.etiqueta})`
                             : `${cuadrilla.nombre} | ${seg.fecha} : ${seg.etiqueta}`
                         }
                       >
@@ -567,6 +569,12 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                           <span className="flex flex-col items-center leading-[1.1]">
                             <span>{seg.etiqueta.replace('Día ', 'D')}</span>
                             <span>▼</span>
+                          </span>
+                        )}
+                        {seg.tipo === 'SUBIDA_BAJADA' && (
+                          <span className="flex flex-col items-center leading-[1.1]">
+                            <span>{seg.etiqueta.replace('Día ', 'D')}</span>
+                            <span>▲▼</span>
                           </span>
                         )}
                         {seg.tipo === 'TURNO' && seg.etiqueta.replace('Día ', 'D')}
@@ -751,6 +759,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               patron_dias_trabajo: cuadrilla.patron_dias_trabajo,
               patron_dias_descanso: cuadrilla.patron_dias_descanso,
               patron_incluye_subida: cuadrilla.patron_incluye_subida,
+              patron_traslado_diario: cuadrilla.patron_traslado_diario,
               fecha_inicio: cuadrilla.fecha_inicio,
               color_tema: cuadrilla.color_tema,
               config_subida_id: cuadrilla.config_subida_id ?? null,

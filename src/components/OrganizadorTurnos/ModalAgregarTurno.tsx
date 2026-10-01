@@ -35,6 +35,7 @@ export const ModalAgregarTurno = ({ patronInicial, cantidadCuadrillas, usuario, 
   const [diasTrabajo, setDiasTrabajo] = useState(patronInicial?.diasTrabajo ?? 14)
   const [diasDescanso, setDiasDescanso] = useState(patronInicial?.diasDescanso ?? 14)
   const [incluyeSubida, setIncluyeSubida] = useState(true)
+  const [trasladoDiario, setTrasladoDiario] = useState(patronInicial?.trasladoDiario ?? false)
   const [fechaInicio, setFechaInicio] = useState(CALENDARIO_INICIO)
   const [funcionarios, setFuncionarios] = useState<FuncionarioBorrador[]>([])
   const [mostrarPegado, setMostrarPegado] = useState(false)
@@ -58,6 +59,7 @@ export const ModalAgregarTurno = ({ patronInicial, cantidadCuadrillas, usuario, 
     setPresetId(preset.id)
     setDiasTrabajo(preset.diasTrabajo)
     setDiasDescanso(preset.diasDescanso)
+    setTrasladoDiario(preset.trasladoDiario ?? false)
   }
 
   const actualizarFuncionario = (key: string, campo: keyof Omit<FuncionarioBorrador, 'key'>, valor: string) => {
@@ -88,6 +90,7 @@ export const ModalAgregarTurno = ({ patronInicial, cantidadCuadrillas, usuario, 
         patron_dias_trabajo: diasTrabajo,
         patron_dias_descanso: diasDescanso,
         patron_incluye_subida: incluyeSubida,
+        patron_traslado_diario: trasladoDiario,
         fecha_inicio: fechaInicio,
         color_tema: siguienteTema(cantidadCuadrillas).id,
         orden: cantidadCuadrillas,
@@ -185,6 +188,10 @@ export const ModalAgregarTurno = ({ patronInicial, cantidadCuadrillas, usuario, 
               <label className="flex items-center gap-2 mt-3 text-sm text-slate-600">
                 <input type="checkbox" checked={incluyeSubida} onChange={(e) => setIncluyeSubida(e.target.checked)} />
                 Incluir día de subida (tránsito)
+              </label>
+              <label className="flex items-center gap-2 mt-2 text-sm text-slate-600" title="La cuadrilla no pernocta en faena: cada día de trabajo genera su propia subida y bajada, en vez de un solo tránsito al empezar y otro al terminar el bloque.">
+                <input type="checkbox" checked={trasladoDiario} onChange={(e) => setTrasladoDiario(e.target.checked)} />
+                Traslado diario (sube y baja cada día de turno)
               </label>
             </div>
 

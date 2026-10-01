@@ -82,18 +82,23 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
     if (cuadrilla.trabajadores.length === 0) continue
     const segmentos = generarLineaTiempoCuadrilla(cuadrilla, inicioVentana, dias)
     for (const seg of segmentos) {
-      if (seg.tipo !== 'SUBIDA' && seg.tipo !== 'BAJADA') continue
-      const tipo: 'subida' | 'bajada' = seg.tipo === 'SUBIDA' ? 'subida' : 'bajada'
-      const configuracionId = (tipo === 'subida' ? cuadrilla.config_subida_id : cuadrilla.config_bajada_id) ?? null
-      for (const trabajador of cuadrilla.trabajadores) {
-        candidatos.push({
-          clave: claveCandidato(trabajador.id, seg.fecha, tipo),
-          trabajador,
-          cuadrillaNombre: cuadrilla.nombre,
-          fecha: seg.fecha,
-          tipo,
-          configuracionId,
-        })
+      // SUBIDA_BAJADA (turno con traslado diario, ej. 5x2 — pedido
+      // explícito 2026-10-02): ese mismo día es a la vez subida y bajada,
+      // así que genera UN candidato de cada tipo en vez de uno solo.
+      const tiposDelDia: ('subida' | 'bajada')[] =
+        seg.tipo === 'SUBIDA' ? ['subida'] : seg.tipo === 'BAJADA' ? ['bajada'] : seg.tipo === 'SUBIDA_BAJADA' ? ['subida', 'bajada'] : []
+      for (const tipo of tiposDelDia) {
+        const configuracionId = (tipo === 'subida' ? cuadrilla.config_subida_id : cuadrilla.config_bajada_id) ?? null
+        for (const trabajador of cuadrilla.trabajadores) {
+          candidatos.push({
+            clave: claveCandidato(trabajador.id, seg.fecha, tipo),
+            trabajador,
+            cuadrillaNombre: cuadrilla.nombre,
+            fecha: seg.fecha,
+            tipo,
+            configuracionId,
+          })
+        }
       }
     }
   }

@@ -1,7 +1,11 @@
 import { CuadrillaTurno } from '@/types/index'
 import { temaPorId } from './coloresTurno'
 
-export type TipoSegmento = 'SUBIDA' | 'TURNO' | 'BAJADA' | 'DESCANSO' | 'SIN_INICIO'
+// SUBIDA_BAJADA: día de trabajo con traslado diario (turno 5x2, pedido
+// explícito 2026-10-02) — la cuadrilla no pernocta en faena, así que ESE
+// MISMO día genera tanto la subida como la bajada (ver
+// patron_traslado_diario en CuadrillaTurno).
+export type TipoSegmento = 'SUBIDA' | 'TURNO' | 'BAJADA' | 'SUBIDA_BAJADA' | 'DESCANSO' | 'SIN_INICIO'
 
 export interface SegmentoTurno {
   id: string
@@ -39,7 +43,25 @@ export function generarLineaTiempoCuadrilla(
     let etiqueta = ''
     let colorClass = ''
 
-    if (diffDias === -1 && cuadrilla.patron_incluye_subida) {
+    if (cuadrilla.patron_traslado_diario) {
+      // Traslado diario: no hay "día antes" de subida ni último día de
+      // bajada distinto del resto — cada día de trabajo trae su propia
+      // ida y vuelta, así que no hace falta nada de eso acá.
+      if (diffDias < 0) {
+        tipo = 'SIN_INICIO'
+      } else {
+        const posicionCiclo = diffDias % largoCiclo
+        if (posicionCiclo < diasTrabajo) {
+          tipo = 'SUBIDA_BAJADA'
+          etiqueta = `Día ${posicionCiclo + 1}`
+          colorClass = tema.subida
+        } else {
+          tipo = 'DESCANSO'
+          etiqueta = `Descanso ${posicionCiclo - diasTrabajo + 1}`
+          colorClass = tema.descanso
+        }
+      }
+    } else if (diffDias === -1 && cuadrilla.patron_incluye_subida) {
       tipo = 'SUBIDA'
       etiqueta = 'Subida'
       colorClass = tema.subida

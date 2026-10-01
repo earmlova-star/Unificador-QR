@@ -32,6 +32,7 @@ export const ModalEditarTurno = ({ cuadrilla, configuraciones, onCerrar, onGuard
   const [diasTrabajo, setDiasTrabajo] = useState(cuadrilla.patron_dias_trabajo)
   const [diasDescanso, setDiasDescanso] = useState(cuadrilla.patron_dias_descanso)
   const [incluyeSubida, setIncluyeSubida] = useState(cuadrilla.patron_incluye_subida)
+  const [trasladoDiario, setTrasladoDiario] = useState(cuadrilla.patron_traslado_diario)
   const [fechaInicio, setFechaInicio] = useState(cuadrilla.fecha_inicio)
   const [colorTemaId, setColorTemaId] = useState(cuadrilla.color_tema)
   const [configSubidaId, setConfigSubidaId] = useState(cuadrilla.config_subida_id ?? '')
@@ -43,6 +44,7 @@ export const ModalEditarTurno = ({ cuadrilla, configuraciones, onCerrar, onGuard
     setPresetId(preset.id)
     setDiasTrabajo(preset.diasTrabajo)
     setDiasDescanso(preset.diasDescanso)
+    setTrasladoDiario(preset.trasladoDiario ?? false)
   }
 
   const guardar = async () => {
@@ -60,6 +62,7 @@ export const ModalEditarTurno = ({ cuadrilla, configuraciones, onCerrar, onGuard
         patron_dias_trabajo: diasTrabajo,
         patron_dias_descanso: diasDescanso,
         patron_incluye_subida: incluyeSubida,
+        patron_traslado_diario: trasladoDiario,
         fecha_inicio: fechaInicio,
         color_tema: colorTemaId,
         config_subida_id: configSubidaId || null,
@@ -125,6 +128,10 @@ export const ModalEditarTurno = ({ cuadrilla, configuraciones, onCerrar, onGuard
               <label className="flex items-center gap-2 mt-3 text-sm text-slate-600">
                 <input type="checkbox" checked={incluyeSubida} onChange={(e) => setIncluyeSubida(e.target.checked)} />
                 Incluir día de subida (tránsito)
+              </label>
+              <label className="flex items-center gap-2 mt-2 text-sm text-slate-600" title="La cuadrilla no pernocta en faena: cada día de trabajo genera su propia subida y bajada, en vez de un solo tránsito al empezar y otro al terminar el bloque.">
+                <input type="checkbox" checked={trasladoDiario} onChange={(e) => setTrasladoDiario(e.target.checked)} />
+                Traslado diario (sube y baja cada día de turno)
               </label>
             </div>
 

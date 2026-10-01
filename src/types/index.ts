@@ -409,6 +409,13 @@ export interface CuadrillaTurno {
   patron_dias_trabajo: number;
   patron_dias_descanso: number;
   patron_incluye_subida: boolean;
+  // Traslado diario (pedido explícito 2026-10-02, turno 5x2): en vez de un
+  // solo tránsito de subida al empezar el bloque de trabajo y uno de
+  // bajada al terminarlo (como 14x14/7x7/4x3, que viven en faena durante
+  // el bloque), acá la cuadrilla no pernocta — CADA día de trabajo genera
+  // su propia subida Y bajada (ver SegmentoTurno.tipo 'SUBIDA_BAJADA' en
+  // motorTurnos.ts). patron_incluye_subida no aplica cuando esto es true.
+  patron_traslado_diario: boolean;
 
   fecha_inicio: string;
   color_tema: string;
