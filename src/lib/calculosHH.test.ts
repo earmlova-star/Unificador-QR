@@ -145,6 +145,35 @@ describe('cadena de acumulados de una faena', () => {
     // 19 quedaron con acumulados que no reflejaban ediciones posteriores).
     expect(trasEditarN1[1]).toEqual({ directas: 231, hm: 0, indirectas: 120 })
   })
+
+  // Traspaso de posta entre faenas (pedido explícito 2026-10-01): Los
+  // Bronces arranca su cadena desde donde quedó Las Tórtolas en vez de
+  // desde cero — ver add_acumulados_base_faena.sql.
+  it('con una base, el primer reporte suma sobre esa base en vez de arrancar de cero', () => {
+    const base = { directas: 1000, hm: 200, indirectas: 500 }
+    const cadena = acumularCadena([{ directas: 100, hm: 0, indirectas: 50 }], base)
+    expect(cadena).toEqual([{ directas: 1100, hm: 200, indirectas: 550 }])
+  })
+
+  it('con una base, cada reporte posterior sigue sumando sobre el acumulado del anterior', () => {
+    const base = { directas: 1000, hm: 0, indirectas: 500 }
+    const cadena = acumularCadena(
+      [
+        { directas: 100, hm: 0, indirectas: 50 },
+        { directas: 80, hm: 10, indirectas: 40 },
+      ],
+      base
+    )
+    expect(cadena).toEqual([
+      { directas: 1100, hm: 0, indirectas: 550 },
+      { directas: 1180, hm: 10, indirectas: 590 },
+    ])
+  })
+
+  it('sin base, el comportamiento es idéntico a arrancar en 0/0/0 (compatibilidad hacia atrás)', () => {
+    const reportes = [{ directas: 100, hm: 0, indirectas: 50 }]
+    expect(acumularCadena(reportes)).toEqual(acumularCadena(reportes, { directas: 0, hm: 0, indirectas: 0 }))
+  })
 })
 
 describe('sumar', () => {

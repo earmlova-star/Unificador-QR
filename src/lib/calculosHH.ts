@@ -94,18 +94,26 @@ export function calcularHHReales(
 }
 
 /**
- * Recalcula la cadena de acumulados de una faena DESDE CERO, en el mismo
- * orden que reciba `reportesEnOrden` (debe venir ordenado por número de
- * reporte ascendente). Usa `acumular()` en cada paso, así que si el HH real
- * de un reporte de en medio cambió (se editó después de creado), el cambio
- * se propaga a todos los reportes posteriores de la cadena — a diferencia
- * de calcular solo "anterior + este", que deja fijo cualquier reporte
+ * Recalcula la cadena de acumulados de una faena, en el mismo orden que
+ * reciba `reportesEnOrden` (debe venir ordenado por número de reporte
+ * ascendente). Usa `acumular()` en cada paso, así que si el HH real de un
+ * reporte de en medio cambió (se editó después de creado), el cambio se
+ * propaga a todos los reportes posteriores de la cadena — a diferencia de
+ * calcular solo "anterior + este", que deja fijo cualquier reporte
  * posterior al que se editó.
+ *
+ * `base` es desde dónde arranca la cadena — por defecto 0/0/0 (cada faena
+ * corre su propia cuenta desde cero, como siempre). Pedido explícito
+ * 2026-10-01: Los Bronces pasa a arrancar su cadena desde donde quedó Las
+ * Tórtolas (un traspaso de posta puntual, no una fusión permanente — ver
+ * acumulados_base_faena / add_acumulados_base_faena.sql), así que
+ * recalcularAcumuladosFaenaSinBloqueo (supabase.ts) le pasa esa base en vez
+ * del 0 de siempre.
  */
-export function acumularCadena(reportesEnOrden: HHReporte[]): HHReporte[] {
-  let directas = 0
-  let hm = 0
-  let indirectas = 0
+export function acumularCadena(reportesEnOrden: HHReporte[], base: HHReporte = { directas: 0, hm: 0, indirectas: 0 }): HHReporte[] {
+  let directas = base.directas
+  let hm = base.hm
+  let indirectas = base.indirectas
   return reportesEnOrden.map((r) => {
     directas = acumular(directas, r.directas)
     hm = acumular(hm, r.hm)

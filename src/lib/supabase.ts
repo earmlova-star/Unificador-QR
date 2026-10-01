@@ -188,6 +188,23 @@ async function esperarBloqueoRecalculoFaena(contratoId: string, faena: Faena): P
 }
 
 async function recalcularAcumuladosFaenaSinBloqueo(contratoId: string, faena: Faena) {
+  // Base de arranque de la cadena (0/0/0 salvo que exista un traspaso
+  // puntual desde otra faena — ver add_acumulados_base_faena.sql y el
+  // comentario de acumularCadena en calculosHH.ts). PGRST116 ("no se
+  // encontró ninguna fila") es esperado cuando no hay traspaso para esta
+  // faena — cualquier otro error sí se propaga.
+  const { data: baseRow, error: errorBase } = await supabase
+    .from('acumulados_base_faena')
+    .select('hh_directas_base, hm_base, hh_indirectas_base')
+    .eq('contrato_id', contratoId)
+    .eq('faena', faena)
+    .maybeSingle()
+
+  if (errorBase) throw errorBase
+  const base = baseRow
+    ? { directas: baseRow.hh_directas_base, hm: baseRow.hm_base, indirectas: baseRow.hh_indirectas_base }
+    : { directas: 0, hm: 0, indirectas: 0 }
+
   const { data, error } = await supabase
     .from('partes_diarios')
     .select('id, mano_obra_directa, mano_obra_indirecta, maquinaria, hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
@@ -199,7 +216,7 @@ async function recalcularAcumuladosFaenaSinBloqueo(contratoId: string, faena: Fa
   if (!data || data.length === 0) return
 
   const reales = data.map((p) => calcularHHReales(p, faena))
-  const cadena = acumularCadena(reales)
+  const cadena = acumularCadena(reales, base)
 
   for (let i = 0; i < data.length; i++) {
     const p = data[i]
