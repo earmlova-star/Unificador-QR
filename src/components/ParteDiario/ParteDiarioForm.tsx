@@ -713,10 +713,10 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         setNumeroReporte(numeroReporteReal)
 
         // hh_*_acumuladas acá es solo un valor inicial razonable (por si
-        // recalcularAcumuladosFaena de abajo llegara a fallar después de
+        // recalcularAcumuladosContrato de abajo llegara a fallar después de
         // esta inserción) — el recálculo de la cadena completa es el que
         // deja el valor definitivo, así que no hace falta traer el último
-        // reporte de la faena para sumarle el de este.
+        // reporte del contrato para sumarle el de este.
         parte = await db.crearParteDiario({
           contrato_id: contrato.id,
           numero_reporte: numeroReporteReal,
@@ -736,15 +736,17 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         setParteCreadoId(parte.id)
       }
 
-      // Recalcula la cadena de acumulados de la faena DESDE CERO, a partir
-      // del HH real de cada reporte guardado — no solo "el último + este".
-      // Se llama después de las tres ramas de arriba (crear, reintento de
-      // creación, y editar uno existente) para que un reporte editado
-      // propague el cambio a todos los reportes posteriores de la cadena.
-      // Antes esto no pasaba: la auditoría del 2026-09-07 encontró 5
-      // reportes reales con acumulados desincronizados, hasta 141 HH de
-      // diferencia con la suma real. Ver db.recalcularAcumuladosFaena.
-      await db.recalcularAcumuladosFaena(contrato.id, faena)
+      // Recalcula la cadena de acumulados del CONTRATO completo DESDE CERO
+      // (una sola cadena para LT y LB combinadas, pedido explícito
+      // 2026-10-02 — antes era una por faena), a partir del HH real de
+      // cada reporte guardado — no solo "el último + este". Se llama
+      // después de las tres ramas de arriba (crear, reintento de creación,
+      // y editar uno existente) para que un reporte editado propague el
+      // cambio a todos los reportes posteriores de la cadena. Antes esto no
+      // pasaba: la auditoría del 2026-09-07 encontró 5 reportes reales con
+      // acumulados desincronizados, hasta 141 HH de diferencia con la suma
+      // real. Ver db.recalcularAcumuladosContrato.
+      await db.recalcularAcumuladosContrato(contrato.id)
 
       // Fotos: unifica las nuevas (traen "file", hay que subirlas a Storage)
       // con las ya existentes (traen "url", vienen de editar un Daily

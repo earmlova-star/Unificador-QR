@@ -177,7 +177,7 @@ export function App() {
         )}
 
         {activeView === 'parte-diario' && usuario.rol !== UserRole.SUPERVISOR && (
-          <ParteDiarioList usuario={usuario} contrato={contratoActivo} faenaActiva={faenaActiva} />
+          <ParteDiarioList usuario={usuario} contrato={contratoActivo} />
         )}
 
         {activeView === 'compras' &&

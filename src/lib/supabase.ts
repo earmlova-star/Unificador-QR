@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { UserRole, UserStatus, SolicitudCompra, Requisicion, OrdenCompra, GuiaDespacho, Faena } from '@/types/index'
+import { UserRole, UserStatus, SolicitudCompra, Requisicion, OrdenCompra, GuiaDespacho } from '@/types/index'
 import { acumularCadena, calcularHHReales } from './calculosHH'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -162,19 +162,27 @@ export const storage = {
 
 // ============ DATABASE HELPERS ============
 
-// Hallazgo QA 2026-09-25: recalcularAcumuladosFaenaSinBloqueo (más abajo)
-// lee y reescribe la cadena de acumulados de una faena entera sin ningún
-// bloqueo — dos guardados casi simultáneos de la misma faena disparaban dos
-// recálculos en paralelo que se pisaban entre sí. adquirir_bloqueo_recalculo_faena
-// es un upsert atómico con TTL (ver add_bloqueo_recalculo_faena.sql); si ya
-// está tomado, se reintenta con backoff antes de rendirse.
-async function esperarBloqueoRecalculoFaena(contratoId: string, faena: Faena): Promise<void> {
+// Hallazgo QA 2026-09-25: recalcularAcumuladosContratoSinBloqueo (más abajo)
+// lee y reescribe la cadena de acumulados de un contrato entero sin ningún
+// bloqueo — dos guardados casi simultáneos (antes: de la misma faena; desde
+// que la cadena es una sola por contrato, pedido explícito 2026-10-02:
+// cualquier par de guardados del contrato, sin importar la faena de cada
+// uno) disparaban dos recálculos en paralelo que se pisaban entre sí.
+// adquirir_bloqueo_recalculo_faena es un upsert atómico con TTL (ver
+// add_bloqueo_recalculo_faena.sql); si ya está tomado, se reintenta con
+// backoff antes de rendirse. Se le sigue pasando un "p_faena" porque la
+// tabla/RPC ya existían con esa columna — se le pasa un valor fijo
+// (FAENA_LOCK_CONTRATO) para que el bloqueo sea por contrato entero, no por
+// faena, sin tener que tocar la migración.
+const FAENA_LOCK_CONTRATO = '*'
+
+async function esperarBloqueoRecalculoContrato(contratoId: string): Promise<void> {
   const intentosMax = 8
   let esperaMs = 250
   for (let intento = 0; intento < intentosMax; intento++) {
     const { data, error } = await supabase.rpc('adquirir_bloqueo_recalculo_faena', {
       p_contrato_id: contratoId,
-      p_faena: faena,
+      p_faena: FAENA_LOCK_CONTRATO,
       p_ttl_segundos: 30,
     })
     if (error) throw error
@@ -183,40 +191,29 @@ async function esperarBloqueoRecalculoFaena(contratoId: string, faena: Faena): P
     esperaMs = Math.min(esperaMs * 2, 4000)
   }
   throw new Error(
-    'No se pudo recalcular los acumulados: otra persona está guardando un Daily Report de esta faena justo ahora. Intenta de nuevo en unos segundos.'
+    'No se pudo recalcular los acumulados: otra persona está guardando un Daily Report de este contrato justo ahora. Intenta de nuevo en unos segundos.'
   )
 }
 
-async function recalcularAcumuladosFaenaSinBloqueo(contratoId: string, faena: Faena) {
-  // Base de arranque de la cadena (0/0/0 salvo que exista un traspaso
-  // puntual desde otra faena — ver add_acumulados_base_faena.sql y el
-  // comentario de acumularCadena en calculosHH.ts). PGRST116 ("no se
-  // encontró ninguna fila") es esperado cuando no hay traspaso para esta
-  // faena — cualquier otro error sí se propaga.
-  const { data: baseRow, error: errorBase } = await supabase
-    .from('acumulados_base_faena')
-    .select('hh_directas_base, hm_base, hh_indirectas_base')
-    .eq('contrato_id', contratoId)
-    .eq('faena', faena)
-    .maybeSingle()
-
-  if (errorBase) throw errorBase
-  const base = baseRow
-    ? { directas: baseRow.hh_directas_base, hm: baseRow.hm_base, indirectas: baseRow.hh_indirectas_base }
-    : { directas: 0, hm: 0, indirectas: 0 }
-
+async function recalcularAcumuladosContratoSinBloqueo(contratoId: string) {
+  // Pedido explícito 2026-10-02: una sola cadena de acumulados por
+  // contrato, ordenada por N° de reporte — ya no una por faena (antes
+  // filtraba `.eq('faena', faena)`; ver acumulados_base_faena, el
+  // mecanismo de traspaso puntual que este modelo reemplaza). `faena` se
+  // trae por fila porque calcularHHReales la necesita (multiplica mano de
+  // obra indirecta por HH_TURNO_POR_FAENA de CADA reporte, que puede
+  // diferir entre LT y LB dentro de la misma cadena).
   const { data, error } = await supabase
     .from('partes_diarios')
-    .select('id, mano_obra_directa, mano_obra_indirecta, maquinaria, hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
+    .select('id, faena, mano_obra_directa, mano_obra_indirecta, maquinaria, hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
     .eq('contrato_id', contratoId)
-    .eq('faena', faena)
     .order('numero_reporte', { ascending: true })
 
   if (error) throw error
   if (!data || data.length === 0) return
 
-  const reales = data.map((p) => calcularHHReales(p, faena))
-  const cadena = acumularCadena(reales, base)
+  const reales = data.map((p) => calcularHHReales(p, p.faena))
+  const cadena = acumularCadena(reales)
 
   for (let i = 0; i < data.length; i++) {
     const p = data[i]
@@ -564,33 +561,38 @@ export const db = {
     return data
   },
 
-  // Recalcula la cadena de *_acumuladas de una faena DESDE CERO, a partir
+  // Recalcula la cadena de *_acumuladas de un contrato DESDE CERO, a partir
   // del HH real de cada reporte (calcularHHReales), y guarda solo los
   // reportes cuyo acumulado haya quedado distinto del que ya tenían.
   //
   // Por qué existe: antes, el acumulado de un reporte nuevo se calculaba
   // una sola vez al crearlo (último acumulado + HH de este reporte) y
   // quedaba fijo para siempre — si ese reporte (o cualquier reporte
-  // anterior de la misma faena) se editaba después, ese cambio nunca se
-  // reflejaba ni en su propio acumulado ni en el de los reportes
-  // posteriores, que dependen de él en cadena. Auditoría del 2026-09-07
-  // encontró 5 reportes reales desincronizados así, con hasta 141 HH de
-  // diferencia entre lo mostrado y la suma real. Este método reemplaza ese
-  // cálculo incremental: se llama después de CUALQUIER guardado (crear,
-  // editar, o el reintento de crearParteDiario/actualizarParteDiario) y
-  // siempre recalcula la cadena completa, así que un reporte editado
-  // propaga el cambio a todo lo que viene después automáticamente. Ver
-  // ParteDiarioForm.tsx (guardar()) y calculosHH.ts (acumularCadena).
-  async recalcularAcumuladosFaena(contratoId: string, faena: Faena) {
-    await esperarBloqueoRecalculoFaena(contratoId, faena)
+  // anterior) se editaba después, ese cambio nunca se reflejaba ni en su
+  // propio acumulado ni en el de los reportes posteriores, que dependen de
+  // él en cadena. Auditoría del 2026-09-07 encontró 5 reportes reales
+  // desincronizados así, con hasta 141 HH de diferencia entre lo mostrado y
+  // la suma real. Este método reemplaza ese cálculo incremental: se llama
+  // después de CUALQUIER guardado (crear, editar, o el reintento de
+  // crearParteDiario/actualizarParteDiario) y siempre recalcula la cadena
+  // completa, así que un reporte editado propaga el cambio a todo lo que
+  // viene después automáticamente. Ver ParteDiarioForm.tsx (guardar()) y
+  // calculosHH.ts (acumularCadena).
+  //
+  // Pedido explícito 2026-10-02: una sola cadena por CONTRATO (antes, una
+  // por faena) — Los Bronces y Las Tórtolas comparten de ahora en adelante
+  // un único acumulado, ordenado por N° de reporte sin importar la faena
+  // de cada uno.
+  async recalcularAcumuladosContrato(contratoId: string) {
+    await esperarBloqueoRecalculoContrato(contratoId)
     try {
-      await recalcularAcumuladosFaenaSinBloqueo(contratoId, faena)
+      await recalcularAcumuladosContratoSinBloqueo(contratoId)
     } finally {
       const { error } = await supabase.rpc('liberar_bloqueo_recalculo_faena', {
         p_contrato_id: contratoId,
-        p_faena: faena,
+        p_faena: FAENA_LOCK_CONTRATO,
       })
-      if (error) console.error('No se pudo liberar el bloqueo de recálculo de faena:', error)
+      if (error) console.error('No se pudo liberar el bloqueo de recálculo de acumulados:', error)
     }
   },
 

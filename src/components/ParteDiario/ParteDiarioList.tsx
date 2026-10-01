@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { calcularHHReales } from '@lib/calculosHH'
 import { formatearFechaCorta } from '@lib/formato'
-import { Faena, FAENA_LABELS, ParteDiario, ParteDiarioEstado, Usuario } from '@/types/index'
+import { ParteDiario, ParteDiarioEstado, Usuario } from '@/types/index'
 import { ParteDiarioForm } from './ParteDiarioForm'
 import { ParteDiarioDetalle } from './ParteDiarioDetalle'
 import { puedeCrear } from './permisos'
@@ -16,12 +16,11 @@ import { IconReloj, IconMaquinaria, IconMeta, IconChecklist } from '@components/
 interface ParteDiarioListProps {
   usuario: Usuario
   contrato: any
-  faenaActiva: Faena
 }
 
 const POR_PAGINA = 10
 
-export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioListProps) => {
+export const ParteDiarioList = ({ usuario, contrato }: ParteDiarioListProps) => {
   const [partes, setPartes] = useState<ParteDiario[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,12 +51,12 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contrato?.id])
 
-  // Cambiar de faena activa, texto de búsqueda o rango de fecha vuelve a la
-  // página 1 — si no, se puede quedar viendo una página vacía que solo
-  // tenía sentido para el filtro anterior.
+  // Cambiar el texto de búsqueda o el rango de fecha vuelve a la página 1
+  // — si no, se puede quedar viendo una página vacía que solo tenía
+  // sentido para el filtro anterior.
   useEffect(() => {
     setPagina(1)
-  }, [faenaActiva, busqueda, fechaDesde, fechaHasta])
+  }, [busqueda, fechaDesde, fechaHasta])
 
   const eliminarParte = async (parte: ParteDiario) => {
     if (!window.confirm(`¿Eliminar el Daily Report N° ${String(parte.numero_reporte).padStart(3, '0')}? Esta acción no se puede deshacer.`)) {
@@ -71,17 +70,16 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
     }
   }
 
-  const partesDeLaFaena = useMemo(() => partes.filter((p) => p.faena === faenaActiva), [partes, faenaActiva])
-
   // Rango de fecha (sobre parte.fecha, YYYY-MM-DD — comparable como texto)
   // que acota tanto los KPIs de HH acumuladas como la tabla de abajo. Vacío
-  // en cualquiera de los dos extremos = sin límite en ese lado.
+  // en cualquiera de los dos extremos = sin límite en ese lado. Pedido
+  // explícito 2026-10-02: ya no se filtra por faena acá — LT y LB se ven
+  // juntas en una sola lista (cada fila indica la suya, ver
+  // ReportsHistoryTable), así que esto parte directo de `partes`.
   const partesEnRango = useMemo(() => {
-    if (!fechaDesde && !fechaHasta) return partesDeLaFaena
-    return partesDeLaFaena.filter(
-      (p) => (!fechaDesde || p.fecha >= fechaDesde) && (!fechaHasta || p.fecha <= fechaHasta)
-    )
-  }, [partesDeLaFaena, fechaDesde, fechaHasta])
+    if (!fechaDesde && !fechaHasta) return partes
+    return partes.filter((p) => (!fechaDesde || p.fecha >= fechaDesde) && (!fechaHasta || p.fecha <= fechaHasta))
+  }, [partes, fechaDesde, fechaHasta])
 
   const partesFiltrados = useMemo(() => {
     const texto = busqueda.trim().toLowerCase()
@@ -99,10 +97,12 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
     [partesFiltrados, pagina]
   )
 
-  // Los 4 KPIs se calculan sobre TODOS los reportes de la faena activa
-  // dentro del rango de fecha elegido (no sobre la página actual, ni
-  // acotados por la búsqueda de texto) — son un resumen del rango, no de lo
-  // que se está viendo en pantalla en este momento.
+  // Los 4 KPIs se calculan sobre TODOS los reportes (LT y LB juntas) dentro
+  // del rango de fecha elegido (no sobre la página actual, ni acotados por
+  // la búsqueda de texto) — son un resumen del rango, no de lo que se está
+  // viendo en pantalla en este momento. calcularHHReales ya usa la faena
+  // PROPIA de cada reporte para el multiplicador de indirectas, así que
+  // mezclar faenas acá no afecta la exactitud de la suma.
   const kpis = useMemo(() => {
     const reales = partesEnRango.map((p) => calcularHHReales(p, p.faena))
     const totalDirectas = reales.reduce((acc, r) => acc + r.directas, 0)
@@ -178,7 +178,7 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
         <div>
           <h2 className="text-xl font-bold text-slate-900">Daily Report</h2>
           <p className="text-sm text-slate-500">
-            {contrato?.codigo} · {contrato?.nombre} · {FAENA_LABELS[faenaActiva]}
+            {contrato?.codigo} · {contrato?.nombre}
           </p>
         </div>
         {puedeCrear(usuario.rol) && (
@@ -195,7 +195,7 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{error}</div>
       )}
 
-      {!isLoading && partesDeLaFaena.length > 0 && (fechaDesde || fechaHasta) && (
+      {!isLoading && partes.length > 0 && (fechaDesde || fechaHasta) && (
         <p className="text-xs text-blue-600">
           Mostrando HH acumuladas {fechaDesde ? `desde el ${formatearFechaCorta(fechaDesde)}` : 'desde el inicio'}
           {' '}
@@ -204,7 +204,7 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
         </p>
       )}
 
-      {!isLoading && partesDeLaFaena.length > 0 && (
+      {!isLoading && partes.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
             icon={<IconReloj />}
@@ -227,7 +227,7 @@ export const ParteDiarioList = ({ usuario, contrato, faenaActiva }: ParteDiarioL
           <MetricCard
             icon={<IconChecklist />}
             label="Reportes Emitidos"
-            value={String(partesDeLaFaena.length)}
+            value={String(partes.length)}
             sublabel={`${kpis.enviados} enviado${kpis.enviados === 1 ? '' : 's'} · ${kpis.borradores} borrador${kpis.borradores === 1 ? '' : 'es'}`}
           />
         </div>

@@ -16,7 +16,7 @@ const COLOR_ESTADO: Record<ParteDiarioEstado, string> = {
 }
 
 interface ReportsHistoryTableProps {
-  partes: ParteDiario[] // ya filtrados por faena activa + búsqueda + paginados
+  partes: ParteDiario[] // ya filtrados por rango de fecha + búsqueda + paginados
   usuario: Usuario
   cargando: boolean
   onSeleccionar: (id: string) => void
@@ -24,9 +24,9 @@ interface ReportsHistoryTableProps {
   onEliminar: (parte: ParteDiario) => void
 }
 
-// Tabla detallada de reportes — a diferencia de FaenaSummaryTable, ESTA sí
-// llega ya filtrada por la faena activa (se filtra en el orquestador,
-// ParteDiarioList.tsx).
+// Tabla detallada de reportes — mezcla Las Tórtolas y Los Bronces (pedido
+// explícito 2026-10-02: ya no se filtra por faena en ParteDiarioList.tsx),
+// por eso cada fila muestra su propia columna "Faena" más abajo.
 export const ReportsHistoryTable = ({ partes, usuario, cargando, onSeleccionar, onEditar, onEliminar }: ReportsHistoryTableProps) => (
   <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
     {cargando ? (
