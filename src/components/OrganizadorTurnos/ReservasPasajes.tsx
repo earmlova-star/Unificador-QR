@@ -481,8 +481,10 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // real de la cuadrilla/turno de cada uno. null = sin grupo asignado
   // todavía — esos se siguen mostrando sueltos, sin este nivel extra (ver
   // render más abajo), para no esconder nada mientras no se haya cargado
-  // la configuración. Los grupos nombrados van primero, alfabético; los
-  // sin asignar al final.
+  // la configuración. Pedido explícito 2026-10-02: ordenados por Horario
+  // de Reserva Webcontrol ascendente (no alfabético por nombre — "Turno
+  // H" a las 11:00 va antes que "Turno AB" a las 12:00), sin asignar al
+  // final.
   const agruparPorGrupoWebcontrol = (lista: Candidato[]): [string | null, Candidato[]][] => {
     const mapa = new Map<string | null, Candidato[]>()
     for (const c of lista) {
@@ -490,10 +492,12 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
       if (!mapa.has(clave)) mapa.set(clave, [])
       mapa.get(clave)!.push(c)
     }
-    return [...mapa.entries()].sort(([a], [b]) => {
+    return [...mapa.entries()].sort(([a, candidatosA], [b, candidatosB]) => {
       if (a === null) return b === null ? 0 : 1
       if (b === null) return -1
-      return a < b ? -1 : a > b ? 1 : 0
+      const ha = resolverViajeMostrado(candidatosA[0]).horarioWebcontrol ?? 'zz:zz'
+      const hb = resolverViajeMostrado(candidatosB[0]).horarioWebcontrol ?? 'zz:zz'
+      return ha < hb ? -1 : ha > hb ? 1 : 0
     })
   }
 
