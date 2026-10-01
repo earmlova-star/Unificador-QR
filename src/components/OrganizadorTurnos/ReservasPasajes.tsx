@@ -427,7 +427,8 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // con configuración vigente, esta manda siempre (ver resolverViaje);
   // sin ella, se respeta lo ya guardado en su reserva, o el genérico si
   // todavía no se ha guardado nada. Compartido entre renderGrupo (la
-  // celda) y horarioMostrado (para el subgrupo Turno + Horario).
+  // celda) y agruparPorTurnoHorario (para el subgrupo Turno + Horario
+  // Webcontrol).
   const resolverViajeMostrado = (c: Candidato) => {
     const reserva = reservaDe(c)
     const { origen, destino, horaSugerida, horarioWebcontrol, configResuelta } = resolverViaje(c.tipo, c.configuracionId, configuraciones, terminal, faena)
@@ -436,36 +437,25 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     return { reserva, origenMostrado, destinoMostrado, horaSugerida, horarioWebcontrol }
   }
 
-  // Horario que de verdad se ve en la fila de un candidato — el ya
-  // guardado si existe, si no el sugerido por su ConfiguracionViaje (igual
-  // que el valor inicial del input de la columna Horario). null si no hay
-  // ninguno de los dos todavía.
-  const horarioMostrado = (c: Candidato): string | null => {
-    const { reserva, horaSugerida } = resolverViajeMostrado(c)
-    return reserva?.horario ?? horaSugerida ?? null
-  }
-
-  // Pedido explícito 2026-10-02: "agrupemos y señalemos por horario
-  // dentro de un subgrupo colapsable" — reemplaza la banda gris por
-  // Origen → Destino de antes (ver git log) por un subgrupo real y
-  // colapsable, agrupado por Turno + Horario de viaje (en la práctica casi
-  // siempre determina también el Origen → Destino, porque ambos salen de
-  // la misma ConfiguracionViaje asignada al turno). El encabezado del
-  // subgrupo NO muestra este horario de viaje, sino el Horario de Reserva
-  // Webcontrol de esa misma configuración (hallazgo QA 2026-10-02: son
-  // horarios distintos — ver resolverViaje/horarioWebcontrol y el render
-  // más abajo). Ordenados por horario de viaje ascendente (sin horario,
-  // al final).
+  // Pedido explícito 2026-10-02: el subgrupo agrupa por Turno + Horario de
+  // Reserva Webcontrol — NO por horario de viaje ni por tipo (subida/
+  // bajada). Así, la subida de un turno (ej. 05:30, Terminal Borja →
+  // Pérez Caldera) y su bajada (ej. 17:00, Pérez Caldera → Terminal
+  // Borja) quedan en el MISMO subgrupo cuando comparten el mismo Horario
+  // de Reserva Webcontrol (ej. "Turno H - Horario Reserva Webcontrol
+  // 11:00" agrupa a ambas) — es una sola reserva en Webcontrol para el
+  // viaje redondo del día. Ordenados por ese horario ascendente (sin
+  // asignar, al final).
   const agruparPorTurnoHorario = (lista: Candidato[]): [string, Candidato[]][] => {
     const mapa = new Map<string, Candidato[]>()
     for (const c of lista) {
-      const clave = `${c.cuadrillaNombre}||${horarioMostrado(c) ?? ''}`
+      const clave = `${c.cuadrillaNombre}||${resolverViajeMostrado(c).horarioWebcontrol ?? ''}`
       if (!mapa.has(clave)) mapa.set(clave, [])
       mapa.get(clave)!.push(c)
     }
     return [...mapa.entries()].sort(([, a], [, b]) => {
-      const ha = horarioMostrado(a[0]) ?? 'zz:zz'
-      const hb = horarioMostrado(b[0]) ?? 'zz:zz'
+      const ha = resolverViajeMostrado(a[0]).horarioWebcontrol ?? 'zz:zz'
+      const hb = resolverViajeMostrado(b[0]).horarioWebcontrol ?? 'zz:zz'
       return ha < hb ? -1 : ha > hb ? 1 : 0
     })
   }
@@ -479,7 +469,9 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.trabajador.rut}</td>
         <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{c.cuadrillaNombre}</td>
         <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap" title={`Fecha de viaje: ${c.fecha}`}>{formatearFechaCorta(c.fecha)}</td>
-        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{origenMostrado} → {destinoMostrado}</td>
+        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
+          <span className={c.tipo === 'subida' ? 'text-emerald-600' : 'text-amber-600'}>{c.tipo === 'subida' ? '▲' : '▼'}</span> {origenMostrado} → {destinoMostrado}
+        </td>
         <td className="px-3 py-1.5">
           <input
             type="text"
@@ -542,13 +534,12 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
     )
   }
 
-  // Sub-bloque Suben o Bajan dentro de un día (ver render más abajo) —
-  // agrupado en subgrupos colapsables de Turno + Horario (pedido
+  // Todos los candidatos (suben y bajan mezclados) de un día, agrupados
+  // en subgrupos colapsables de Turno + Horario Webcontrol (pedido
   // explícito 2026-10-02). Las marcadas "No considerada" van en sus
   // propios subgrupos al final, después de todos los activos.
-  // prefijoClave identifica el día + tipo (Suben/Bajan) al que pertenece
-  // esta tabla, para que las claves de subgrupo sean únicas en toda la
-  // pantalla.
+  // prefijoClave identifica el grupo + día al que pertenece esta tabla,
+  // para que las claves de subgrupo sean únicas en toda la pantalla.
   const renderTablaViaje = (lista: Candidato[], prefijoClave: string) => {
     const activos = lista.filter((c) => !(reservaDe(c)?.no_considerada ?? false))
     const noConsiderados = lista.filter((c) => reservaDe(c)?.no_considerada ?? false)
@@ -673,37 +664,27 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
               </div>
 
               {/* Pedido explícito 2026-10-02: ordenado y agrupado primero
-                  por día (fecha de viaje real) — Suben y Bajan quedan
-                  anidados DEBAJO de cada día, en vez de ser las secciones
-                  de más afuera con el día repetido adentro de cada una
-                  (como era antes). candidatosGrupo ya mezcla subida y
+                  por día (fecha de viaje real). Dentro de cada día, Suben y
+                  Bajan ya NO son secciones separadas — se agrupan juntos
+                  por Turno + Horario de Reserva Webcontrol (ver
+                  agruparPorTurnoHorario): la subida y la bajada de un
+                  mismo turno que comparten ese horario (ej. el viaje
+                  redondo de un turno con traslado diario) quedan en UN
+                  solo subgrupo colapsable, no en dos. La dirección de cada
+                  fila se distingue con el ▲/▼ junto a su Origen → Destino
+                  (ver renderGrupo). candidatosGrupo ya mezcla subida y
                   bajada de este grupo (ver más arriba, usado también para
                   el badge de confirmadas). */}
               {!colapsado && (
                 <div className="px-3 py-2 divide-y divide-slate-200">
-                  {agruparPorFechaViaje(candidatosGrupo).map(([fechaViaje, candidatosDia]) => {
-                    const subidaDia = candidatosDia.filter((c) => c.tipo === 'subida')
-                    const bajadaDia = candidatosDia.filter((c) => c.tipo === 'bajada')
-                    return (
-                      <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
-                        <p className="text-xs font-bold text-slate-700 capitalize mb-2">
-                          {formatearFechaMedia(fechaViaje)}
-                        </p>
-                        {subidaDia.length > 0 && (
-                          <div className="mb-3 last:mb-0">
-                            <p className="text-[10px] font-semibold text-emerald-700 uppercase mb-2">▲ Suben ({subidaDia.length})</p>
-                            {renderTablaViaje(subidaDia, `${claveGrupo}|${fechaViaje}|subida`)}
-                          </div>
-                        )}
-                        {bajadaDia.length > 0 && (
-                          <div>
-                            <p className="text-[10px] font-semibold text-amber-700 uppercase mb-2">▼ Bajan ({bajadaDia.length})</p>
-                            {renderTablaViaje(bajadaDia, `${claveGrupo}|${fechaViaje}|bajada`)}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {agruparPorFechaViaje(candidatosGrupo).map(([fechaViaje, candidatosDia]) => (
+                    <div key={fechaViaje} className="py-3 first:pt-0 last:pb-0">
+                      <p className="text-xs font-bold text-slate-700 capitalize mb-2">
+                        {formatearFechaMedia(fechaViaje)}
+                      </p>
+                      {renderTablaViaje(candidatosDia, `${claveGrupo}|${fechaViaje}`)}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
