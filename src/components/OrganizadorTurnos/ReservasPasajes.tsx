@@ -562,6 +562,12 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         : sueltas.length > 0
         ? `Reserva suelta (${cuadrillasDistintas[0]}), no pertenece a ningún turno.`
         : null
+    // Pedido explícito 2026-10-02: las reservas sin confirmar quedan
+    // arriba de las confirmadas (sort estable: dentro de cada mitad se
+    // mantiene el orden de antes).
+    const filasOrdenadas = [...candidatosSubgrupo].sort(
+      (a, b) => Number(reservaDe(a)?.confirmada ?? false) - Number(reservaDe(b)?.confirmada ?? false)
+    )
     return (
       <div key={claveSubgrupo} className="border border-slate-200 rounded">
         <button
@@ -589,7 +595,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs">
               {tablaCabecera}
-              <tbody className="divide-y divide-slate-100">{candidatosSubgrupo.map(renderGrupo)}</tbody>
+              <tbody className="divide-y divide-slate-100">{filasOrdenadas.map(renderGrupo)}</tbody>
             </table>
           </div>
         )}
