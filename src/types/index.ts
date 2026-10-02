@@ -472,6 +472,27 @@ export interface ConfiguracionViaje {
   updated_at: string;
 }
 
+// Directorio de funcionarios del módulo Organizador de Turnos (ver
+// add_funcionarios_turno.sql) — pedido explícito 2026-10-02. Alimenta el
+// buscador con autocompletado al agregar un funcionario a una Subida/
+// Bajada suelta. Es un directorio aparte: no está atado a los
+// trabajadores ya asignados a un turno o evento (cada uno conserva su
+// propia copia).
+export interface FuncionarioTurno {
+  id: string;
+  nombre: string;
+  apellido: string;
+  rut: string;
+  cargo: string;
+  // Texto libre (normalmente el nombre de una cuadrilla); null si solo
+  // viaja en subidas/bajadas sueltas.
+  turno?: string | null;
+
+  creado_por?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Subida o Bajada suelta, de un solo día — pedido explícito 2026-09-24:
 // "agregar subida o bajada un día", independiente de cualquier Turno (no
 // repite ningún ciclo semanal/patrón). Tabla propia (ver

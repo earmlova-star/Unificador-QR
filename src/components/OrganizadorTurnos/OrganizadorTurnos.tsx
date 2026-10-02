@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, Usuario } from '@/types/index'
+import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, FuncionarioTurno, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
 import { agruparEventosTransito } from './lib/agruparEventos'
 import { PRESETS_TURNO, PatronTurno } from './lib/presetsTurno'
@@ -16,12 +16,13 @@ import { ModalAgregarFuncionarioEvento } from './ModalAgregarFuncionarioEvento'
 import { ModalConfiguracionesViaje } from './ModalConfiguracionesViaje'
 import { ModalTrabajadores } from './ModalTrabajadores'
 import { ReservasPasajes } from './ReservasPasajes'
+import { ListaFuncionarios } from './ListaFuncionarios'
 
 interface OrganizadorTurnosProps {
   usuario: Usuario
 }
 
-type Vista = 'gantt' | 'reservas'
+type Vista = 'gantt' | 'reservas' | 'funcionarios'
 
 // Módulo "Organizador de Turnos": carta Gantt de cuadrillas mineras,
 // compartida vía Supabase (ver add_organizador_turnos.sql) entre
@@ -34,6 +35,10 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   const [cuadrillas, setCuadrillas] = useState<CuadrillaTurno[]>([])
   const [eventosTransito, setEventosTransito] = useState<EventoTransito[]>([])
   const [configuraciones, setConfiguraciones] = useState<ConfiguracionViaje[]>([])
+  // Directorio de funcionarios (ver ListaFuncionarios / BuscadorFuncionario)
+  // — pedido explícito 2026-10-02.
+  const [funcionarios, setFuncionarios] = useState<FuncionarioTurno[]>([])
+  const [errorFuncionarios, setErrorFuncionarios] = useState<string | null>(null)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -127,6 +132,18 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       setConfiguraciones(datosConfiguraciones as ConfiguracionViaje[])
     } catch (err) {
       mensajeError = mensajeError ?? traducirError(err, 'No se pudieron cargar las configuraciones de viaje')
+    }
+
+    // El directorio es un complemento (autocompletado): si no carga —p. ej.
+    // mientras no se haya corrido add_funcionarios_turno.sql— no se
+    // muestra en el banner de errores de toda la pantalla, solo en su
+    // propia pestaña.
+    try {
+      const datosFuncionarios = await db.obtenerFuncionariosTurno()
+      setFuncionarios(datosFuncionarios as FuncionarioTurno[])
+      setErrorFuncionarios(null)
+    } catch (err) {
+      setErrorFuncionarios(traducirError(err, 'No se pudo cargar el directorio de funcionarios'))
     }
 
     setError(mensajeError)
@@ -366,12 +383,26 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         >
           🚌 Reservas de Pasajes
         </button>
+        <button
+          type="button"
+          onClick={() => setVista('funcionarios')}
+          className={`px-3 py-1.5 rounded-t-lg text-sm font-semibold transition-colors ${
+            vista === 'funcionarios' ? 'bg-blue-50 text-blue-700 border border-b-0 border-slate-200' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          👥 Funcionarios
+        </button>
       </div>
 
       {error && (
         <p className="text-sm text-red-700 bg-red-50 border-b border-red-200 px-4 sm:px-6 py-3">{error}</p>
       )}
 
+      {vista === 'funcionarios' && errorFuncionarios && (
+        <p className="text-sm text-red-700 bg-red-50 border-b border-red-200 px-4 sm:px-6 py-3">{errorFuncionarios}</p>
+      )}
+
+      {vista !== 'funcionarios' && (
       <div className="relative flex flex-wrap items-center justify-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
         <button
           type="button"
@@ -411,6 +442,19 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
           </button>
         )}
       </div>
+      )}
+
+      {vista === 'funcionarios' && (
+        <ListaFuncionarios
+          funcionarios={funcionarios}
+          turnosSugeridos={cuadrillas.map((c) => c.nombre)}
+          usuario={usuario}
+          cargando={cargando}
+          onCreado={(nuevo) => setFuncionarios((prev) => [...prev, nuevo])}
+          onActualizado={(actualizado) => setFuncionarios((prev) => prev.map((f) => (f.id === actualizado.id ? actualizado : f)))}
+          onEliminado={(id) => setFuncionarios((prev) => prev.filter((f) => f.id !== id))}
+        />
+      )}
 
       {vista === 'gantt' && (cargando ? (
         <p className="text-sm text-slate-500 py-12 text-center">Cargando…</p>
@@ -847,6 +891,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
         <ModalAgregarEventoTransito
           tipo={modalEvento}
           configuraciones={configuraciones}
+          funcionariosDirectorio={funcionarios}
           usuario={usuario}
           onCerrar={() => setModalEvento(undefined)}
           onCreado={(nuevos) => { setEventosTransito((prev) => [...prev, ...nuevos]); setModalEvento(undefined) }}
@@ -875,6 +920,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       {eventoFuncionarioId !== undefined && (
         <ModalAgregarFuncionarioEvento
           evento={eventosTransito.find((e) => e.id === eventoFuncionarioId)!}
+          funcionariosDirectorio={funcionarios}
           onCerrar={() => setEventoFuncionarioId(undefined)}
           onAgregados={(eventoId, trabajadores) => {
             setEventosTransito((prev) =>
@@ -892,6 +938,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
             return `Trabajadores — ${evento.tipo === 'subida' ? 'Subida' : 'Bajada'} suelta del ${evento.fecha}`
           })()}
           trabajadores={eventosTransito.find((e) => e.id === eventoTrabajadoresId)!.trabajadores}
+          funcionariosDirectorio={funcionarios}
           onCerrar={() => setEventoTrabajadoresId(undefined)}
           onAgregarUno={async (datos) => {
             const t = await db.agregarTrabajadorEventoTransito({ evento_id: eventoTrabajadoresId, ...datos })

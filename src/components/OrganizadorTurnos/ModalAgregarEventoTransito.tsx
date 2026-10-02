@@ -2,14 +2,17 @@ import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { ConfiguracionViaje, EventoTransito, Usuario } from '@/types/index'
+import { ConfiguracionViaje, EventoTransito, FuncionarioTurno, Usuario } from '@/types/index'
 import { CALENDARIO_INICIO, CALENDARIO_FIN } from './lib/rangoFechas'
 import { validarRut, formatearRut } from './lib/rut'
 import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
+import { BuscadorFuncionario } from './BuscadorFuncionario'
 
 interface ModalAgregarEventoTransitoProps {
   tipo: 'subida' | 'bajada'
   configuraciones: ConfiguracionViaje[]
+  // Directorio para el autocompletado (pedido explícito 2026-10-02).
+  funcionariosDirectorio: FuncionarioTurno[]
   usuario: Usuario
   onCerrar: () => void
   onCreado: (eventos: EventoTransito[]) => void
@@ -39,7 +42,7 @@ function funcionarioVacio(): FuncionarioBorrador {
 // caso típico es el mismo grupo viajando varios días sueltos distintos.
 // guardar() las crea todas en una sola llamada atómica (ver
 // crearEventosTransitoMultiples en supabase.ts), no una por fecha.
-export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onCerrar, onCreado }: ModalAgregarEventoTransitoProps) => {
+export const ModalAgregarEventoTransito = ({ tipo, configuraciones, funcionariosDirectorio, usuario, onCerrar, onCreado }: ModalAgregarEventoTransitoProps) => {
   const [fechas, setFechas] = useState<string[]>([])
   const [fechaNueva, setFechaNueva] = useState(CALENDARIO_INICIO)
   const [configuracionId, setConfiguracionId] = useState('')
@@ -72,6 +75,15 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
     ])
     setTextoMasivo('')
     setMostrarPegado(false)
+  }
+
+  // Elegir a alguien en el buscador agrega su tarjeta ya completa (nombre,
+  // apellido, RUT y cargo) — pedido explícito 2026-10-02.
+  const agregarDesdeDirectorio = (f: FuncionarioTurno) => {
+    setFuncionarios((prev) => [
+      ...prev,
+      { key: crypto.randomUUID(), nombre: f.nombre, apellido: f.apellido, rut: formatearRut(f.rut), cargo: f.cargo },
+    ])
   }
 
   const actualizarFuncionario = (key: string, campo: keyof Omit<FuncionarioBorrador, 'key'>, valor: string) => {
@@ -209,6 +221,15 @@ export const ModalAgregarEventoTransito = ({ tipo, configuraciones, usuario, onC
                     + Agregar funcionario
                   </button>
                 </div>
+              </div>
+
+              <div className="mb-2">
+                <BuscadorFuncionario
+                  funcionarios={funcionariosDirectorio}
+                  excluirRuts={funcionarios.map((f) => f.rut)}
+                  onSeleccionar={agregarDesdeDirectorio}
+                  etiqueta="Buscar en el directorio y agregar"
+                />
               </div>
 
               {mostrarPegado && (

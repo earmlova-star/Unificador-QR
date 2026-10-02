@@ -1191,6 +1191,53 @@ export const db = {
     if (error) throw error
   },
 
+  // ---------- Directorio de funcionarios (Organizador de Turnos) ----------
+  // Ver add_funcionarios_turno.sql. Alimenta el autocompletado al agregar
+  // un funcionario a una Subida/Bajada suelta; no está atado a los
+  // trabajadores ya asignados a turnos/eventos (cada uno tiene su copia).
+  async obtenerFuncionariosTurno() {
+    const { data, error } = await supabase
+      .from('funcionarios_turno')
+      .select('*')
+      .order('apellido', { ascending: true })
+      .order('nombre', { ascending: true })
+
+    if (error) throw error
+    return data
+  },
+
+  async crearFuncionarioTurno(funcionario: {
+    nombre: string
+    apellido: string
+    rut: string
+    cargo: string
+    turno: string | null
+    creado_por: string
+  }) {
+    const { data, error } = await supabase.from('funcionarios_turno').insert([funcionario]).select().single()
+    if (error) throw error
+    return data
+  },
+
+  async actualizarFuncionarioTurno(
+    id: string,
+    cambios: { nombre: string; apellido: string; rut: string; cargo: string; turno: string | null }
+  ) {
+    const { data, error } = await supabase
+      .from('funcionarios_turno')
+      .update({ ...cambios, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async eliminarFuncionarioTurno(id: string) {
+    const { error } = await supabase.from('funcionarios_turno').delete().eq('id', id)
+    if (error) throw error
+  },
+
   // ---------- Configuraciones de Viaje (presets de Origen/Destino/Hora) ----------
   // Ver add_configuraciones_viaje.sql. Reusables y asignables a un turno
   // (cuadrillas_turno.config_subida_id / config_bajada_id) — mismo acceso

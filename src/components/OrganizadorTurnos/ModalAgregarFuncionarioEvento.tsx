@@ -2,12 +2,15 @@ import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
-import { EventoTransito, EventoTransitoTrabajador } from '@/types/index'
+import { EventoTransito, EventoTransitoTrabajador, FuncionarioTurno } from '@/types/index'
 import { validarRut, formatearRut } from './lib/rut'
 import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
+import { BuscadorFuncionario } from './BuscadorFuncionario'
 
 interface ModalAgregarFuncionarioEventoProps {
   evento: EventoTransito
+  // Directorio para el autocompletado (pedido explícito 2026-10-02).
+  funcionariosDirectorio: FuncionarioTurno[]
   onCerrar: () => void
   onAgregados: (eventoId: string, trabajadores: EventoTransitoTrabajador[]) => void
 }
@@ -17,7 +20,7 @@ const EJEMPLO_MASIVO = 'Juan Pérez González\t12.345.678-9\tCapataz\nMaría Ló
 // Igual que ModalAgregarFuncionario.tsx, pero sin selector de turno: el
 // evento ya viene fijo (se abre desde el botón +👤 de esa fila puntual en
 // la Carta Gantt), así que acá no hace falta elegir destino.
-export const ModalAgregarFuncionarioEvento = ({ evento, onCerrar, onAgregados }: ModalAgregarFuncionarioEventoProps) => {
+export const ModalAgregarFuncionarioEvento = ({ evento, funcionariosDirectorio, onCerrar, onAgregados }: ModalAgregarFuncionarioEventoProps) => {
   const [modo, setModo] = useState<'uno' | 'masivo'>('uno')
   const [nombre, setNombre] = useState('')
   const [apellido, setApellido] = useState('')
@@ -100,6 +103,17 @@ export const ModalAgregarFuncionarioEvento = ({ evento, onCerrar, onAgregados }:
           <div className="space-y-4">
             {modo === 'uno' ? (
               <>
+                <BuscadorFuncionario
+                  funcionarios={funcionariosDirectorio}
+                  excluirRuts={evento.trabajadores.map((t) => t.rut)}
+                  onSeleccionar={(f) => {
+                    setNombre(f.nombre)
+                    setApellido(f.apellido)
+                    setRut(formatearRut(f.rut))
+                    setCargo(f.cargo)
+                  }}
+                />
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">Nombre</label>

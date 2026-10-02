@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { traducirError } from '@lib/errores'
+import { FuncionarioTurno } from '@/types/index'
 import { validarRut, formatearRut } from './lib/rut'
 import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
+import { BuscadorFuncionario } from './BuscadorFuncionario'
 
 export interface PersonaViajeEditable {
   id: string
@@ -15,6 +17,10 @@ export interface PersonaViajeEditable {
 interface ModalTrabajadoresProps {
   titulo: string
   trabajadores: PersonaViajeEditable[]
+  // Si viene, "Agregar nuevo funcionario" suma un buscador con
+  // autocompletado sobre este directorio (pedido explícito 2026-10-02,
+  // por ahora solo lo pasan las subidas/bajadas sueltas).
+  funcionariosDirectorio?: FuncionarioTurno[]
   onCerrar: () => void
   onAgregarUno: (datos: Omit<PersonaViajeEditable, 'id'>) => Promise<PersonaViajeEditable>
   onAgregarMasivo: (lista: Omit<PersonaViajeEditable, 'id'>[]) => Promise<PersonaViajeEditable[]>
@@ -38,6 +44,7 @@ function trabajadorCambio(a: PersonaViajeEditable, b: PersonaViajeEditable): boo
 export const ModalTrabajadores = ({
   titulo,
   trabajadores,
+  funcionariosDirectorio,
   onCerrar,
   onAgregarUno,
   onAgregarMasivo,
@@ -266,6 +273,18 @@ export const ModalTrabajadores = ({
 
               <div className="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-2 space-y-2">
                 <span className="text-[10px] uppercase text-slate-400">Agregar nuevo funcionario</span>
+                {funcionariosDirectorio && (
+                  <BuscadorFuncionario
+                    funcionarios={funcionariosDirectorio}
+                    excluirRuts={trabajadoresLocal.map((t) => t.rut)}
+                    onSeleccionar={(f) => {
+                      setNuevoNombre(f.nombre)
+                      setNuevoApellido(f.apellido)
+                      setNuevoRut(formatearRut(f.rut))
+                      setNuevoCargo(f.cargo)
+                    }}
+                  />
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <input type="text" value={nuevoNombre} onChange={(e) => setNuevoNombre(e.target.value)} placeholder="Nombre" className="px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600" />
                   <input type="text" value={nuevoApellido} onChange={(e) => setNuevoApellido(e.target.value)} placeholder="Apellido" className="px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600" />
