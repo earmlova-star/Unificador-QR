@@ -281,6 +281,12 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
 
   const reservaDe = (c: Candidato) => reservas.find((r) => r.trabajador_id === c.trabajador.id && r.fecha === c.fecha && r.tipo === c.tipo)
 
+  // Pedido explícito 2026-10-02: las reservas marcadas "No considerada" no
+  // entran en las sumatorias de personas (ni en el total ni en las
+  // confirmadas de ningún encabezado) — se siguen mostrando, en gris y al
+  // final.
+  const estaNoConsiderada = (c: Candidato) => reservaDe(c)?.no_considerada ?? false
+
   const guardar = async (
     c: Candidato,
     cambios: Partial<
@@ -583,7 +589,14 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
             {tipo === 'subida' ? '▲ Subida / Hacia Faena' : '▼ Bajada / Retorno'} ({origenMostrado} → {destinoMostrado} · {horario})
           </span>
           <span className="text-[10px] text-slate-500">
-            ({candidatosSubgrupo.length} {candidatosSubgrupo.length === 1 ? 'persona' : 'personas'})
+            {/* renderTablaViaje separa las no consideradas en sus propios
+                subgrupos, así que un subgrupo es todo de un tipo o todo del
+                otro: las no consideradas se cuentan aparte, no como personas. */}
+            (
+            {estaNoConsiderada(candidatosSubgrupo[0])
+              ? `${candidatosSubgrupo.length} ${candidatosSubgrupo.length === 1 ? 'no considerada' : 'no consideradas'}`
+              : `${candidatosSubgrupo.length} ${candidatosSubgrupo.length === 1 ? 'persona' : 'personas'}`}
+            )
           </span>
         </button>
         {nota && <p className="px-2 py-1 text-[10px] text-slate-500 italic bg-slate-50 border-t border-slate-100">Nota: {nota}</p>}
@@ -610,8 +623,8 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
   // al que pertenece esta tabla, para que las claves de subgrupo sean
   // únicas en toda la pantalla.
   const renderTablaViaje = (lista: Candidato[], prefijoClave: string) => {
-    const activos = lista.filter((c) => !(reservaDe(c)?.no_considerada ?? false))
-    const noConsiderados = lista.filter((c) => reservaDe(c)?.no_considerada ?? false)
+    const activos = lista.filter((c) => !estaNoConsiderada(c))
+    const noConsiderados = lista.filter(estaNoConsiderada)
     return (
       <div className="space-y-2">
         {agruparPorViaje(activos).map(([clave, grupo]) => renderSubgrupoViaje(grupo, `${prefijoClave}|${clave}`))}
@@ -692,9 +705,12 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         <div className="px-4 sm:px-6 py-4 space-y-6 overflow-x-auto">
           {porFecha.map(([claveGrupo, grupos]) => {
             const colapsado = gruposColapsados.has(claveGrupo)
+            // candidatosGrupo (todos, para mostrarlos) vs consideradosGrupo
+            // (sin las "No consideradas", para las sumatorias de personas).
             const candidatosGrupo = [...grupos.subida, ...grupos.bajada]
-            const totalGrupo = candidatosGrupo.length
-            const confirmadasGrupo = candidatosGrupo.filter((c) => reservaDe(c)?.confirmada).length
+            const consideradosGrupo = candidatosGrupo.filter((c) => !estaNoConsiderada(c))
+            const totalGrupo = consideradosGrupo.length
+            const confirmadasGrupo = consideradosGrupo.filter((c) => reservaDe(c)?.confirmada).length
             return (
             <div key={claveGrupo} className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="bg-slate-100 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -764,6 +780,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                     const claveNivel2 = `${claveGrupo}|grupoweb|${grupoWebcontrol}`
                     const colapsadoNivel2 = subgruposColapsados.has(claveNivel2)
                     const horarioWebcontrolNivel2 = resolverViajeMostrado(candidatosCluster[0]).horarioWebcontrol
+                    const personasCluster = candidatosCluster.filter((c) => !estaNoConsiderada(c)).length
                     return (
                       <div key={grupoWebcontrol} className="border border-slate-200 rounded-lg overflow-hidden">
                         <button
@@ -777,7 +794,7 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
                             {grupoWebcontrol}: Horario de Reserva Webcontrol {horarioWebcontrolNivel2 ?? 'sin asignar'}
                           </span>
                           <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5">
-                            {candidatosCluster.length} {candidatosCluster.length === 1 ? 'persona' : 'personas'}
+                            {personasCluster} {personasCluster === 1 ? 'persona' : 'personas'}
                           </span>
                         </button>
                         {!colapsadoNivel2 && <div className="px-3 py-2">{renderDias(candidatosCluster, claveNivel2)}</div>}
