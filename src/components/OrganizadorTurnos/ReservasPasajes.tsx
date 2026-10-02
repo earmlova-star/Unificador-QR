@@ -582,10 +582,16 @@ export const ReservasPasajes = ({ cuadrillas, eventosTransito, configuraciones, 
         </button>
         {nota && <p className="px-2 py-1 text-[10px] text-slate-500 italic bg-slate-50 border-t border-slate-100">Nota: {nota}</p>}
         {!subColapsado && (
-          <table className="min-w-full text-xs">
-            {tablaCabecera}
-            <tbody className="divide-y divide-slate-100">{candidatosSubgrupo.map(renderGrupo)}</tbody>
-          </table>
+          // Pedido explícito 2026-10-02: scroll horizontal propio de cada
+          // tabla — los contenedores de más afuera tienen overflow-hidden
+          // (para los bordes redondeados), así que sin este wrapper el
+          // contenido que no cabe se cortaba en vez de poder deslizarse.
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              {tablaCabecera}
+              <tbody className="divide-y divide-slate-100">{candidatosSubgrupo.map(renderGrupo)}</tbody>
+            </table>
+          </div>
         )}
       </div>
     )
