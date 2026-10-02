@@ -4,6 +4,7 @@ import { traducirError } from '@lib/errores'
 import { FuncionarioTurno, Usuario } from '@/types/index'
 import { validarRut, formatearRut } from './lib/rut'
 import { filtrarFuncionarios, normalizarRut } from './lib/buscarFuncionario'
+import { ConteoCargo, resumirCargos } from './lib/resumenCargos'
 
 interface ListaFuncionariosProps {
   funcionarios: FuncionarioTurno[]
@@ -32,6 +33,38 @@ const COLLATOR = new Intl.Collator('es', { sensitivity: 'base' })
 const CLASE_INPUT =
   'w-full px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600'
 
+// Tarjeta del resumen de cargos (pedido explícito 2026-10-02): lista cada
+// cargo con su cantidad y una barra proporcional al que más tiene dentro de
+// ESTA tarjeta.
+const TarjetaCargos = ({ titulo, total, cargos, destacada = false }: { titulo: string; total: number; cargos: ConteoCargo[]; destacada?: boolean }) => {
+  const maximo = Math.max(1, ...cargos.map((c) => c.total))
+  return (
+    <div className={`border rounded-lg bg-white ${destacada ? 'border-blue-300' : 'border-slate-200'}`}>
+      <div className={`flex items-center justify-between gap-2 px-3 py-2 border-b rounded-t-lg ${destacada ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
+        <span className="text-xs font-bold text-slate-700 truncate" title={titulo}>
+          {titulo}
+        </span>
+        <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5 flex-shrink-0">
+          {total} {total === 1 ? 'funcionario' : 'funcionarios'}
+        </span>
+      </div>
+      <ul className="px-3 py-2 space-y-1 max-h-64 overflow-y-auto">
+        {cargos.map((c) => (
+          <li key={c.cargo} className="flex items-center gap-2 text-xs">
+            <span className="w-2/5 truncate text-slate-700" title={c.cargo}>
+              {c.cargo}
+            </span>
+            <span className="flex-1 h-1.5 bg-slate-100 rounded">
+              <span className="block h-1.5 bg-blue-400 rounded" style={{ width: `${(c.total / maximo) * 100}%` }} />
+            </span>
+            <span className="w-6 text-right font-semibold text-slate-800">{c.total}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // Pestaña "Funcionarios" del Organizador de Turnos (pedido explícito
 // 2026-10-02): el directorio que alimenta el autocompletado al agregar un
 // funcionario a una Subida/Bajada suelta. Agregar, editar o borrar acá NO
@@ -45,7 +78,13 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
   const [formEdicion, setFormEdicion] = useState<FormFuncionario>(FORM_VACIO)
   const [guardando, setGuardando] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
+  const [mostrarResumen, setMostrarResumen] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Resumen de todo el directorio, no del filtro de la búsqueda.
+  const resumen = useMemo(() => resumirCargos(funcionarios), [funcionarios])
+  // "Sin turno" aparece como una tarjeta más, pero no es un turno.
+  const cantidadTurnos = resumen.porTurno.filter((t) => t.turno !== null).length
 
   const ordenados = useMemo(
     () => [...funcionarios].sort((a, b) => COLLATOR.compare(a.apellido, b.apellido) || COLLATOR.compare(a.nombre, b.nombre)),
@@ -207,6 +246,32 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
               {guardando && editandoId === null ? 'Agregando…' : 'Agregar al directorio'}
             </button>
           </div>
+        </div>
+      )}
+
+      {funcionarios.length > 0 && (
+        <div className="border border-slate-200 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setMostrarResumen((v) => !v)}
+            aria-expanded={mostrarResumen}
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 w-full px-3 py-2 bg-slate-50 hover:bg-slate-100 text-left rounded-lg select-none"
+          >
+            <span className="text-slate-400 text-xs w-3 flex-shrink-0">{mostrarResumen ? '▾' : '▸'}</span>
+            <span className="text-xs font-bold text-slate-700">📊 Resumen de cargos</span>
+            <span className="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full px-2 py-0.5">
+              {resumen.porCargo.length} {resumen.porCargo.length === 1 ? 'cargo' : 'cargos'} · {cantidadTurnos}{' '}
+              {cantidadTurnos === 1 ? 'turno' : 'turnos'}
+            </span>
+          </button>
+          {mostrarResumen && (
+            <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              <TarjetaCargos titulo="Total por cargo" total={resumen.total} cargos={resumen.porCargo} destacada />
+              {resumen.porTurno.map((t) => (
+                <TarjetaCargos key={t.turno ?? 'sin-turno'} titulo={t.turno ?? 'Sin turno'} total={t.total} cargos={t.cargos} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
