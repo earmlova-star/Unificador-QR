@@ -19,7 +19,9 @@ export interface ResumenCargos {
   porTurno: ResumenTurno[]
 }
 
-const COLLATOR = new Intl.Collator('es', { sensitivity: 'base' })
+// numeric: orden "natural" — "Turno A - 7x7" va antes que "Turno A - 14x14"
+// (comparando 7 con 14 como números, no como texto).
+const COLLATOR = new Intl.Collator('es', { sensitivity: 'base', numeric: true })
 
 function limpiar(texto: string | null | undefined): string {
   return (texto ?? '').trim().replace(/\s+/g, ' ')
@@ -58,10 +60,51 @@ function contar(valores: string[]): ConteoCargo[] {
   return conteos.sort((a, b) => b.total - a.total || COLLATOR.compare(a.cargo, b.cargo))
 }
 
+export interface GrupoTurnos {
+  // Ej. "Turno A" — agrupa "Turno A - 7x7", "Turno A - 14x14", etc.
+  grupo: string
+  total: number
+  turnos: ResumenTurno[]
+}
+
+// "Turno A - 14x14" → grupo "Turno A". Solo cuando lo que sigue a "Turno"
+// es UNA letra seguida de guion: "Turno 5x2 - Administrativo", "Turno AB"
+// o "Turno H" no pertenecen a ningún grupo.
+const PATRON_GRUPO = /^\s*turno\s+([a-z])\s*-\s*\S/i
+
+// Separa los turnos del resumen en grupos por letra (Turno A, Turno B…) y
+// los que no encajan en ninguno (pedido explícito 2026-10-02). Grupos y
+// turnos de cada grupo en orden natural (7x7 antes que 14x14); los sueltos
+// conservan el orden de entrada (ya viene "sin turno" al final).
+export function agruparTurnosPorGrupo(turnos: ResumenTurno[]): { grupos: GrupoTurnos[]; sueltos: ResumenTurno[] } {
+  const porGrupo = new Map<string, GrupoTurnos>()
+  const sueltos: ResumenTurno[] = []
+
+  for (const t of turnos) {
+    const letra = t.turno === null ? undefined : PATRON_GRUPO.exec(t.turno)?.[1]
+    if (!letra) {
+      sueltos.push(t)
+      continue
+    }
+    const nombre = `Turno ${letra.toUpperCase()}`
+    let grupo = porGrupo.get(nombre)
+    if (!grupo) {
+      grupo = { grupo: nombre, total: 0, turnos: [] }
+      porGrupo.set(nombre, grupo)
+    }
+    grupo.total += t.total
+    grupo.turnos.push(t)
+  }
+
+  const grupos = [...porGrupo.values()].sort((a, b) => COLLATOR.compare(a.grupo, b.grupo))
+  for (const g of grupos) g.turnos.sort((a, b) => COLLATOR.compare(a.turno ?? '', b.turno ?? ''))
+  return { grupos, sueltos }
+}
+
 // Resumen de cargos del directorio de funcionarios (pedido explícito
 // 2026-10-02): total por cargo de todo el directorio, y el mismo conteo
-// por cada turno. Los turnos van en orden alfabético y "sin turno" (null)
-// al final.
+// por cada turno. Los turnos van en orden natural (alfabético, con los
+// números comparados como números) y "sin turno" (null) al final.
 export function resumirCargos(funcionarios: FuncionarioTurno[]): ResumenCargos {
   const porTurno = new Map<string, { turnos: string[]; cargos: string[] }>()
 
