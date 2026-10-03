@@ -17,6 +17,7 @@ import { ModalConfiguracionesViaje } from './ModalConfiguracionesViaje'
 import { ModalTrabajadores } from './ModalTrabajadores'
 import { ReservasPasajes } from './ReservasPasajes'
 import { ListaFuncionarios } from './ListaFuncionarios'
+import { contarActivos, fechaLocalISO } from './lib/bajasTrabajadores'
 
 interface OrganizadorTurnosProps {
   usuario: Usuario
@@ -563,7 +564,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         title="Ver, editar, agregar o eliminar funcionarios de este turno"
                         className="text-xs text-slate-500 hover:text-blue-600 hover:underline flex-shrink-0"
                       >
-                        {cuadrilla.trabajadores.length} trabajadores
+                        {contarActivos(cuadrilla.trabajadores, fechaLocalISO())} trabajadores
                       </button>
                     </div>
 
@@ -869,6 +870,28 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
             await db.eliminarTrabajadorCuadrilla(id)
             setCuadrillas((prev) =>
               prev.map((c) => (c.id === cuadrillaTrabajadoresId ? { ...c, trabajadores: c.trabajadores.filter((t) => t.id !== id) } : c))
+            )
+          }}
+          // Baja con fecha (pedido explícito 2026-10-03): el trabajador sigue
+          // existiendo y sus reservas anteriores a la fecha se conservan.
+          onDarDeBaja={async (id, fechaISO) => {
+            await db.darDeBajaTrabajadorCuadrilla(id, fechaISO)
+            setCuadrillas((prev) =>
+              prev.map((c) =>
+                c.id === cuadrillaTrabajadoresId
+                  ? { ...c, trabajadores: c.trabajadores.map((t) => (t.id === id ? { ...t, fecha_baja: fechaISO } : t)) }
+                  : c
+              )
+            )
+          }}
+          onReintegrar={async (id) => {
+            await db.reintegrarTrabajadorCuadrilla(id)
+            setCuadrillas((prev) =>
+              prev.map((c) =>
+                c.id === cuadrillaTrabajadoresId
+                  ? { ...c, trabajadores: c.trabajadores.map((t) => (t.id === id ? { ...t, fecha_baja: null } : t)) }
+                  : c
+              )
             )
           }}
         />

@@ -413,6 +413,11 @@ export interface TrabajadorCuadrilla {
   apellido: string;
   rut: string;
   cargo: string;
+  // Baja con fecha (pedido explícito 2026-10-03, ver
+  // add_fecha_baja_trabajador_cuadrilla.sql): último día que sigue en el
+  // turno, inclusive. Reservas de Pasajes lo calcula solo hasta esa fecha,
+  // así que sus reservas anteriores se conservan. null/undefined = activo.
+  fecha_baja?: string | null;
   created_at: string;
 }
 

@@ -1042,9 +1042,44 @@ export const db = {
     return data
   },
 
+  // BORRA al trabajador, y con él (trigger trg_limpiar_reservas_pasaje_
+  // cuadrilla + "on delete cascade" de vencimientos) todas sus reservas de
+  // pasajes y sus documentos de vencimiento. Para sacarlo de un turno sin
+  // perder nada, usar darDeBajaTrabajadorCuadrilla.
   async eliminarTrabajadorCuadrilla(id: string) {
     const { error } = await supabase.from('cuadrillas_turno_trabajadores').delete().eq('id', id)
     if (error) throw error
+  },
+
+  // Baja con fecha (pedido explícito 2026-10-03): `fechaBaja` ('YYYY-MM-DD')
+  // es el ÚLTIMO día que sigue en el turno. Es un UPDATE, no un DELETE: el
+  // trigger de limpieza no se dispara, así que sus reservas anteriores (y
+  // sus vencimientos) se conservan — Reservas de Pasajes solo deja de
+  // generarle filas después de esa fecha. Ver add_fecha_baja_trabajador_cuadrilla.sql.
+  async darDeBajaTrabajadorCuadrilla(id: string, fechaBaja: string) {
+    const { data, error } = await supabase
+      .from('cuadrillas_turno_trabajadores')
+      .update({ fecha_baja: fechaBaja })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  },
+
+  // Deshace una baja: vuelve a estar activo en todas las fechas, y sus
+  // reservas posteriores a la baja (que nunca se borraron) reaparecen.
+  async reintegrarTrabajadorCuadrilla(id: string) {
+    const { data, error } = await supabase
+      .from('cuadrillas_turno_trabajadores')
+      .update({ fecha_baja: null })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
   },
 
   // ---------- Eventos de tránsito (Subida/Bajada sueltas) ----------

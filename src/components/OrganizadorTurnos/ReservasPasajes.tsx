@@ -3,6 +3,7 @@ import { db } from '@lib/supabase'
 import { traducirError } from '@lib/errores'
 import { ConfiguracionViaje, CuadrillaTurno, EventoTransito, ReservaPasaje, Usuario } from '@/types/index'
 import { generarLineaTiempoCuadrilla } from './lib/motorTurnos'
+import { trabajadorActivoEn } from './lib/bajasTrabajadores'
 import { UBICACION_TERMINAL, UBICACION_FAENA, origenDestino } from './lib/ubicaciones'
 
 interface ReservasPasajesProps {
@@ -90,6 +91,10 @@ function calcularCandidatos(cuadrillas: CuadrillaTurno[], eventosTransito: Event
       for (const tipo of tiposDelDia) {
         const configuracionId = (tipo === 'subida' ? cuadrilla.config_subida_id : cuadrilla.config_bajada_id) ?? null
         for (const trabajador of cuadrilla.trabajadores) {
+          // Baja con fecha (pedido explícito 2026-10-03): después de su
+          // fecha de baja ya no se le generan reservas, pero las anteriores
+          // (y sus confirmaciones) se siguen viendo.
+          if (!trabajadorActivoEn(trabajador, seg.fecha)) continue
           candidatos.push({
             clave: claveCandidato(trabajador.id, seg.fecha, tipo),
             trabajador,

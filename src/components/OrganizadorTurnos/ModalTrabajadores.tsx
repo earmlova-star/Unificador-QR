@@ -4,6 +4,7 @@ import { traducirError } from '@lib/errores'
 import { FuncionarioTurno } from '@/types/index'
 import { validarRut, formatearRut } from './lib/rut'
 import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
+import { fechaLocalISO } from './lib/bajasTrabajadores'
 import { BuscadorFuncionario } from './BuscadorFuncionario'
 
 export interface PersonaViajeEditable {
@@ -12,6 +13,9 @@ export interface PersonaViajeEditable {
   apellido: string
   rut: string
   cargo: string
+  // Solo los trabajadores de un turno la tienen (baja con fecha, pedido
+  // explícito 2026-10-03): último día que siguen en el turno.
+  fecha_baja?: string | null
 }
 
 interface ModalTrabajadoresProps {
@@ -25,7 +29,16 @@ interface ModalTrabajadoresProps {
   onAgregarUno: (datos: Omit<PersonaViajeEditable, 'id'>) => Promise<PersonaViajeEditable>
   onAgregarMasivo: (lista: Omit<PersonaViajeEditable, 'id'>[]) => Promise<PersonaViajeEditable[]>
   onGuardarEdiciones: (cambiados: PersonaViajeEditable[]) => Promise<void>
+  // Borra al trabajador para siempre (y, en turnos, sus reservas de pasajes
+  // y vencimientos — ver darDeBajaTrabajadorCuadrilla en supabase.ts).
   onEliminar: (id: string) => Promise<void>
+  // Baja con fecha (pedido explícito 2026-10-03): si vienen, el botón
+  // principal de cada trabajador pasa a ser "Dar de baja" (conserva sus
+  // reservas anteriores) y "Eliminar definitivamente" queda en la sección
+  // "Dados de baja". Solo las pasan los turnos; las subidas/bajadas sueltas
+  // siguen eliminando directo, como antes.
+  onDarDeBaja?: (id: string, fechaISO: string) => Promise<void>
+  onReintegrar?: (id: string) => Promise<void>
 }
 
 function trabajadorCambio(a: PersonaViajeEditable, b: PersonaViajeEditable): boolean {
@@ -50,6 +63,8 @@ export const ModalTrabajadores = ({
   onAgregarMasivo,
   onGuardarEdiciones,
   onEliminar,
+  onDarDeBaja,
+  onReintegrar,
 }: ModalTrabajadoresProps) => {
   const [modoEdicion, setModoEdicion] = useState(false)
   const [trabajadoresLocal, setTrabajadoresLocal] = useState(trabajadores)
@@ -62,9 +77,21 @@ export const ModalTrabajadores = ({
   const [agregandoMasivo, setAgregandoMasivo] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
+  // Baja con fecha: a quién se le está pidiendo la fecha, y qué fecha.
+  const [bajaEnCursoId, setBajaEnCursoId] = useState<string | null>(null)
+  const [fechaBaja, setFechaBaja] = useState(() => fechaLocalISO())
+  const [procesandoBajaId, setProcesandoBajaId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const { validos: masivoValidos, errores: masivoErrores } = parsearTrabajadoresMasivo(textoMasivo)
+
+  const soportaBaja = Boolean(onDarDeBaja)
+  const hoy = fechaLocalISO()
+  // Con baja = tiene fecha_baja (aunque sea futura: "se va el viernes").
+  const activos = trabajadoresLocal.filter((t) => !t.fecha_baja)
+  const dadosDeBaja = trabajadoresLocal.filter((t) => t.fecha_baja)
+  const activosLectura = trabajadores.filter((t) => !t.fecha_baja)
+  const dadosDeBajaLectura = trabajadores.filter((t) => t.fecha_baja)
 
   const entrarAEditar = () => {
     setTrabajadoresLocal(trabajadores)
@@ -92,6 +119,50 @@ export const ModalTrabajadores = ({
     } finally {
       setEliminandoId(null)
     }
+  }
+
+  const abrirBaja = (id: string) => {
+    setError(null)
+    setFechaBaja(fechaLocalISO())
+    setBajaEnCursoId(id)
+  }
+
+  const confirmarBaja = async (id: string) => {
+    if (!onDarDeBaja) return
+    if (!fechaBaja) return setError('Elige la fecha de baja.')
+    setError(null)
+    setProcesandoBajaId(id)
+    try {
+      await onDarDeBaja(id, fechaBaja)
+      setTrabajadoresLocal((prev) => prev.map((t) => (t.id === id ? { ...t, fecha_baja: fechaBaja } : t)))
+      setBajaEnCursoId(null)
+    } catch (err) {
+      setError(traducirError(err, 'No se pudo dar de baja al funcionario'))
+    } finally {
+      setProcesandoBajaId(null)
+    }
+  }
+
+  const reintegrar = async (id: string) => {
+    if (!onReintegrar) return
+    setError(null)
+    setProcesandoBajaId(id)
+    try {
+      await onReintegrar(id)
+      setTrabajadoresLocal((prev) => prev.map((t) => (t.id === id ? { ...t, fecha_baja: null } : t)))
+    } catch (err) {
+      setError(traducirError(err, 'No se pudo reintegrar al funcionario'))
+    } finally {
+      setProcesandoBajaId(null)
+    }
+  }
+
+  const eliminarDefinitivamente = async (t: PersonaViajeEditable) => {
+    const ok = window.confirm(
+      `¿Eliminar definitivamente a ${t.nombre} ${t.apellido}? Se borran también todas sus reservas de pasajes y sus vencimientos, y no se puede deshacer. Si solo salió del turno, déjalo dado de baja: así sus reservas anteriores se conservan.`
+    )
+    if (!ok) return
+    await eliminar(t.id)
   }
 
   const agregarUno = async () => {
@@ -126,11 +197,12 @@ export const ModalTrabajadores = ({
 
   const guardarEdiciones = async () => {
     setError(null)
-    for (const t of trabajadoresLocal) {
+    // Los dados de baja no se editan (ni se validan): solo los activos.
+    for (const t of activos) {
       if (!t.nombre.trim() || !t.apellido.trim() || !t.cargo.trim()) return setError('Completa nombre, apellido y cargo de cada funcionario.')
       if (!validarRut(t.rut)) return setError(`RUT inválido: ${t.rut}.`)
     }
-    const cambiados = trabajadoresLocal.filter((t) => {
+    const cambiados = activos.filter((t) => {
       const original = trabajadores.find((o) => o.id === t.id)
       return original && trabajadorCambio(original, t)
     })
@@ -166,31 +238,54 @@ export const ModalTrabajadores = ({
           {!modoEdicion ? (
             <div className="space-y-4">
               <p className="text-xs text-slate-500">
-                {trabajadores.length} trabajador{trabajadores.length === 1 ? '' : 'es'}
+                {activosLectura.length} trabajador{activosLectura.length === 1 ? '' : 'es'}
+                {dadosDeBajaLectura.length > 0 && ` · ${dadosDeBajaLectura.length} con baja`}
               </p>
               {trabajadores.length === 0 ? (
                 <p className="text-sm text-slate-400">Sin trabajadores asignados todavía.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead>
-                      <tr className="text-slate-400 uppercase text-[10px] border-b border-slate-200">
-                        <th className="font-semibold pr-4 pb-1.5">Nombre</th>
-                        <th className="font-semibold pr-4 pb-1.5">RUT</th>
-                        <th className="font-semibold pb-1.5">Cargo</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {trabajadores.map((t) => (
-                        <tr key={t.id}>
-                          <td className="pr-4 py-1.5 text-slate-800">{t.nombre} {t.apellido}</td>
-                          <td className="pr-4 py-1.5 text-slate-600">{t.rut}</td>
-                          <td className="py-1.5 text-slate-600">{t.cargo}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  {activosLectura.length === 0 ? (
+                    <p className="text-sm text-slate-400">Ningún trabajador activo.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="text-slate-400 uppercase text-[10px] border-b border-slate-200">
+                            <th className="font-semibold pr-4 pb-1.5">Nombre</th>
+                            <th className="font-semibold pr-4 pb-1.5">RUT</th>
+                            <th className="font-semibold pb-1.5">Cargo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {activosLectura.map((t) => (
+                            <tr key={t.id}>
+                              <td className="pr-4 py-1.5 text-slate-800">{t.nombre} {t.apellido}</td>
+                              <td className="pr-4 py-1.5 text-slate-600">{t.rut}</td>
+                              <td className="py-1.5 text-slate-600">{t.cargo}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {dadosDeBajaLectura.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Con baja</p>
+                      <table className="w-full text-xs text-left">
+                        <tbody className="divide-y divide-slate-100">
+                          {dadosDeBajaLectura.map((t) => (
+                            <tr key={t.id} className="text-slate-500">
+                              <td className="pr-4 py-1.5">{t.nombre} {t.apellido}</td>
+                              <td className="pr-4 py-1.5">{t.rut}</td>
+                              <td className="py-1.5 whitespace-nowrap">Baja el {t.fecha_baja}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="flex justify-end pt-2 border-t border-slate-200">
@@ -243,22 +338,67 @@ export const ModalTrabajadores = ({
                 </div>
               )}
 
-              {trabajadoresLocal.length === 0 && <p className="text-xs text-slate-400">Todavía no hay funcionarios asignados.</p>}
+              {activos.length === 0 && (
+                <p className="text-xs text-slate-400">
+                  {dadosDeBaja.length > 0 ? 'Ningún funcionario activo.' : 'Todavía no hay funcionarios asignados.'}
+                </p>
+              )}
 
               <div className="space-y-2">
-                {trabajadoresLocal.map((t) => (
+                {activos.map((t) => (
                   <div key={t.id} className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] uppercase text-slate-400">Funcionario</span>
-                      <button
-                        type="button"
-                        onClick={() => eliminar(t.id)}
-                        disabled={eliminandoId === t.id}
-                        className="text-red-600 hover:text-red-700 text-xs disabled:opacity-50"
-                      >
-                        🗑
-                      </button>
+                      {soportaBaja ? (
+                        <button
+                          type="button"
+                          onClick={() => (bajaEnCursoId === t.id ? setBajaEnCursoId(null) : abrirBaja(t.id))}
+                          title="Sale del turno desde una fecha; sus reservas anteriores se conservan"
+                          className="text-xs px-2 py-0.5 rounded border border-amber-300 text-amber-800 hover:bg-amber-50"
+                        >
+                          Dar de baja
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => eliminar(t.id)}
+                          disabled={eliminandoId === t.id}
+                          className="text-red-600 hover:text-red-700 text-xs disabled:opacity-50"
+                        >
+                          🗑
+                        </button>
+                      )}
                     </div>
+                    {soportaBaja && bajaEnCursoId === t.id && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 space-y-2">
+                        <label className="block text-[11px] text-amber-800">
+                          Último día en el turno — sus reservas hasta esa fecha (inclusive) se conservan; después ya no aparece.
+                        </label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="date"
+                            value={fechaBaja}
+                            onChange={(e) => setFechaBaja(e.target.value)}
+                            className="px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => confirmarBaja(t.id)}
+                            disabled={procesandoBajaId === t.id}
+                            className="text-xs px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
+                          >
+                            {procesandoBajaId === t.id ? 'Guardando…' : 'Confirmar baja'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBajaEnCursoId(null)}
+                            className="text-xs px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-white"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <input type="text" value={t.nombre} onChange={(e) => actualizarLocal(t.id, 'nombre', e.target.value)} placeholder="Nombre" className="px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600" />
                       <input type="text" value={t.apellido} onChange={(e) => actualizarLocal(t.id, 'apellido', e.target.value)} placeholder="Apellido" className="px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600" />
@@ -270,6 +410,44 @@ export const ModalTrabajadores = ({
                   </div>
                 ))}
               </div>
+
+              {soportaBaja && dadosDeBaja.length > 0 && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-slate-500 uppercase">Dados de baja ({dadosDeBaja.length})</label>
+                  {dadosDeBaja.map((t) => (
+                    <div key={t.id} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs min-w-0">
+                        <div className="text-slate-700">
+                          {t.nombre} {t.apellido} <span className="text-slate-400">· {t.rut}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Baja el {t.fecha_baja}
+                          {(t.fecha_baja ?? '') >= hoy ? ' (sigue en el turno hasta esa fecha)' : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => reintegrar(t.id)}
+                          disabled={procesandoBajaId === t.id}
+                          className="text-xs px-2 py-0.5 rounded border border-slate-300 text-slate-700 hover:bg-white disabled:opacity-50"
+                        >
+                          Reintegrar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => eliminarDefinitivamente(t)}
+                          disabled={eliminandoId === t.id}
+                          title="Borra al trabajador y también todas sus reservas de pasajes y vencimientos"
+                          className="text-xs px-2 py-0.5 rounded text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Eliminar definitivamente
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-2 space-y-2">
                 <span className="text-[10px] uppercase text-slate-400">Agregar nuevo funcionario</span>
