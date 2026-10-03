@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Faena, HH_TURNO_POR_FAENA } from '@/types/index'
+import { Faena, HH_TURNO_POR_FAENA, MIN_HH_ACTIVIDADES_PARA_ENVIAR } from '@/types/index'
 import {
   acumular,
   acumularCadena,
@@ -15,6 +15,16 @@ import { traducirError } from './errores'
 describe('multiplicador de HH por faena', () => {
   it('usa 10 horas en Las Tórtolas y 12 en Los Bronces', () => {
     expect(HH_TURNO_POR_FAENA[Faena.LT]).toBe(10)
+    expect(HH_TURNO_POR_FAENA[Faena.LB]).toBe(12)
+  })
+
+  // Pedido explícito 2026-10-03: quitar el mínimo de HH x actividad de Los
+  // Bronces para enviar el Daily NO debe tocar el 12 de HH_TURNO_POR_FAENA
+  // (sigue siendo "HH por Día" del Excel y el multiplicador de las HH
+  // indirectas) — por eso son dos constantes separadas.
+  it('Los Bronces no exige mínimo de HH x actividad para enviar; Las Tórtolas sigue exigiendo 10', () => {
+    expect(MIN_HH_ACTIVIDADES_PARA_ENVIAR[Faena.LB]).toBe(0)
+    expect(MIN_HH_ACTIVIDADES_PARA_ENVIAR[Faena.LT]).toBe(10)
     expect(HH_TURNO_POR_FAENA[Faena.LB]).toBe(12)
   })
 

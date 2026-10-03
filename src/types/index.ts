@@ -229,17 +229,28 @@ export const FAENA_LABELS: Record<Faena, string> = {
   [Faena.LB]: 'Los Bronces',
 }
 
-// HH de turno por faena — un solo número que define a la vez: (1) el
-// mínimo de HH x actividad para poder enviar el reporte, (2) "HH por Día"
-// (celda J9 del Excel, de la que ya dependen las fórmulas de HH Total de
-// Fuerza laboral indirecta y el cálculo de HH Indirectas acumuladas), y
-// (3) el multiplicador que se muestra en el formulario ("HH Total (×N)").
-// Antes de esta división, este valor estaba fijo en 10 (J9) o incluso
-// desincronizado en 11 (el literal hardcodeado en el formulario) — ver
-// conversación del 2026-08-23.
+// HH de turno por faena — un solo número que define a la vez: (1)
+// "HH por Día" (celda J9 del Excel, de la que ya dependen las fórmulas de
+// HH Total de Fuerza laboral indirecta y el cálculo de HH Indirectas
+// acumuladas), y (2) el multiplicador que se muestra en el formulario
+// ("HH Total (×N)"). Antes de esta división, este valor estaba fijo en 10
+// (J9) o incluso desincronizado en 11 (el literal hardcodeado en el
+// formulario) — ver conversación del 2026-08-23. Ya NO define el mínimo
+// para enviar el reporte: ver MIN_HH_ACTIVIDADES_PARA_ENVIAR.
 export const HH_TURNO_POR_FAENA: Record<Faena, number> = {
   [Faena.LT]: 10,
   [Faena.LB]: 12,
+}
+
+// Mínimo de HH x actividad (suma de "Cantidad" de Actividades Ejecutadas)
+// para poder ENVIAR el reporte. Pedido explícito 2026-10-03: Los Bronces
+// ya no exige ningún mínimo (0 = se puede enviar con cualquier suma); Las
+// Tórtolas sigue exigiendo sus 10 HH. Separado de HH_TURNO_POR_FAENA
+// porque ese número también alimenta "HH por Día" del Excel y el
+// multiplicador de las HH indirectas, que no cambian.
+export const MIN_HH_ACTIVIDADES_PARA_ENVIAR: Record<Faena, number> = {
+  [Faena.LT]: HH_TURNO_POR_FAENA[Faena.LT],
+  [Faena.LB]: 0,
 }
 
 export interface ActividadEjecutada {

@@ -11,6 +11,7 @@ import {
   FAENA_LABELS,
   GrupoMaquinaria,
   HH_TURNO_POR_FAENA,
+  MIN_HH_ACTIVIDADES_PARA_ENVIAR,
   ParteDiario,
   ParteDiarioEstado,
   Usuario,
@@ -46,11 +47,12 @@ interface ParteDiarioFormProps {
 const MAX_ACTIVIDADES = 7
 
 // Control interno: la suma de "Cantidad" (HH x actividad) de Actividades
-// Ejecutadas debe llegar al mínimo de HH_TURNO_POR_FAENA[faena] para
-// poder enviar el reporte. Aplica solo al enviar (nuevo envío o
-// borrador→enviado) — no bloquea "Guardar borrador" ni "Guardar cambios"
+// Ejecutadas debe llegar al mínimo de MIN_HH_ACTIVIDADES_PARA_ENVIAR[faena]
+// para poder enviar el reporte (Las Tórtolas: 10 HH; Los Bronces: sin
+// mínimo, pedido explícito 2026-10-03). Aplica solo al enviar (nuevo envío
+// o borrador→enviado) — no bloquea "Guardar borrador" ni "Guardar cambios"
 // sobre un reporte ya enviado (pedido explícito, ver conversación del
-// 2026-08-23). El mismo HH_TURNO_POR_FAENA también define "HH por Día"
+// 2026-08-23). HH_TURNO_POR_FAENA, en cambio, sigue definiendo "HH por Día"
 // (J9 del Excel) y el multiplicador de HH Total de Fuerza laboral
 // indirecta — antes fijo en 10/11 para todos, ahora depende de la faena.
 
@@ -593,12 +595,16 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
 
   // Suma de "Cantidad" (HH x actividad) de Actividades Ejecutadas — es
   // solo control interno de visualización + validación al enviar (ver
-  // HH_TURNO_POR_FAENA más abajo), no alimenta ninguna celda del Excel.
+  // MIN_HH_ACTIVIDADES_PARA_ENVIAR más abajo), no alimenta ninguna celda
+  // del Excel.
   const totalHhActividades = sumar(actividades.slice(0, numActividades).map((a) => a.cantidad ?? 0))
   // Redondeo a 2 decimales para evitar artefactos de punto flotante
   // (ej: 0.1 + 0.2) al mostrar/comparar la suma.
   const totalHhActividadesRedondeado = Math.round(totalHhActividades * 100) / 100
-  const minHhActividades = HH_TURNO_POR_FAENA[faena]
+  const minHhActividades = MIN_HH_ACTIVIDADES_PARA_ENVIAR[faena]
+  // Mínimo 0 = esa faena no exige mínimo: ni se bloquea el envío ni se
+  // marca la suma en rojo.
+  const faltanHhActividades = minHhActividades > 0 && totalHhActividadesRedondeado < minHhActividades
 
   const guardar = async (estadoFinal: ParteDiarioEstado.BORRADOR | ParteDiarioEstado.ENVIADO) => {
     if (!contrato?.id) return
@@ -609,7 +615,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     // cambios" sobre un reporte que ya estaba enviado (estadoBloqueado) —
     // ese botón reutiliza estadoFinal=ENVIADO pero es una corrección de
     // datos, no un envío nuevo. El mínimo depende de la faena elegida.
-    if (estadoFinal === ParteDiarioEstado.ENVIADO && !estadoBloqueado && totalHhActividadesRedondeado < minHhActividades) {
+    if (estadoFinal === ParteDiarioEstado.ENVIADO && !estadoBloqueado && faltanHhActividades) {
       setError(
         `La suma de HH x actividad es ${totalHhActividadesRedondeado} y debe llegar al menos a ${minHhActividades} HH (mínimo de ${FAENA_LABELS[faena]}) para enviar el reporte. Puedes guardarlo como borrador mientras completas las actividades.`
       )
@@ -1120,8 +1126,9 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         </div>
 
         {/* Suma de HH x actividad — solo visualización + control interno
-            para el bloqueo de envío (ver HH_TURNO_POR_FAENA, el mínimo
-            depende de la faena elegida arriba). No es una celda del Excel. */}
+            para el bloqueo de envío (ver MIN_HH_ACTIVIDADES_PARA_ENVIAR, el
+            mínimo depende de la faena elegida arriba; en Los Bronces es 0, así
+            que nunca bloquea). No es una celda del Excel. */}
         <div className="grid grid-cols-1 sm:grid-cols-[24px_1fr_84px_84px_2fr_64px_32px] gap-2 items-center mt-2 pt-2 border-t border-slate-200">
           <span />
           <span className="sm:col-span-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -1129,14 +1136,14 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
           </span>
           <span
             className={`text-sm font-semibold text-right ${
-              totalHhActividadesRedondeado < minHhActividades ? 'text-red-600' : 'text-emerald-600'
+              faltanHhActividades ? 'text-red-600' : 'text-emerald-600'
             }`}
           >
             {totalHhActividadesRedondeado}
           </span>
           <span />
         </div>
-        {totalHhActividadesRedondeado < minHhActividades && (
+        {faltanHhActividades && (
           <p className="text-xs text-red-500 text-right mt-1">
             Mínimo {minHhActividades} HH ({FAENA_LABELS[faena]}) para poder enviar el reporte.
           </p>
