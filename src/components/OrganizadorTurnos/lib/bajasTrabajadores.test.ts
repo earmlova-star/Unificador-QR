@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { contarActivos, fechaLocalISO, trabajadorActivoEn } from './bajasTrabajadores'
+import { contarActivos, fechaCorta, fechaLocalISO, trabajadorActivoEn } from './bajasTrabajadores'
 
 describe('trabajadorActivoEn', () => {
   it('sin baja está activo en cualquier fecha', () => {
@@ -46,5 +46,17 @@ describe('fechaLocalISO', () => {
 
   it('a las 23:30 locales sigue siendo el mismo día (no salta a mañana por UTC)', () => {
     expect(fechaLocalISO(new Date(2026, 9, 3, 23, 30))).toBe('2026-10-03')
+  })
+})
+
+describe('fechaCorta', () => {
+  it('muestra la fecha como DD-MM-YYYY', () => {
+    expect(fechaCorta('2026-10-03')).toBe('03-10-2026')
+    expect(fechaCorta('2027-01-31')).toBe('31-01-2027')
+  })
+
+  it('devuelve tal cual lo que no es una fecha ISO', () => {
+    expect(fechaCorta('')).toBe('')
+    expect(fechaCorta('hoy')).toBe('hoy')
   })
 })

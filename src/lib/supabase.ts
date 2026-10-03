@@ -1051,34 +1051,63 @@ export const db = {
     if (error) throw error
   },
 
-  // Baja con fecha (pedido explícito 2026-10-03): `fechaBaja` ('YYYY-MM-DD')
-  // es el ÚLTIMO día que sigue en el turno. Es un UPDATE, no un DELETE: el
-  // trigger de limpieza no se dispara, así que sus reservas anteriores (y
-  // sus vencimientos) se conservan — Reservas de Pasajes solo deja de
-  // generarle filas después de esa fecha. Ver add_fecha_baja_trabajador_cuadrilla.sql.
-  async darDeBajaTrabajadorCuadrilla(id: string, fechaBaja: string) {
-    const { data, error } = await supabase
-      .from('cuadrillas_turno_trabajadores')
-      .update({ fecha_baja: fechaBaja })
-      .eq('id', id)
-      .select()
-      .single()
+  // Baja con fecha y motivo (pedidos explícitos 2026-10-03): `fechaBaja`
+  // ('YYYY-MM-DD') es el ÚLTIMO día que sigue en el turno. Es un UPDATE, no
+  // un DELETE: el trigger de limpieza no se dispara, así que sus reservas
+  // anteriores (y sus vencimientos) se conservan — Reservas de Pasajes solo
+  // deja de generarle filas después de esa fecha. Un solo RPC actualiza al
+  // trabajador Y su ficha del directorio de Funcionarios (mismo RUT), para
+  // que no queden desincronizados. Ver add_motivo_baja_y_desvinculados.sql.
+  async darDeBajaTrabajadorCuadrilla(id: string, fechaBaja: string, motivo: string) {
+    const { data, error } = await supabase.rpc('dar_de_baja_trabajador_cuadrilla', {
+      p_trabajador_id: id,
+      p_fecha_baja: fechaBaja,
+      p_motivo: motivo,
+    })
 
     if (error) throw error
     return data
   },
 
-  // Deshace una baja: vuelve a estar activo en todas las fechas, y sus
-  // reservas posteriores a la baja (que nunca se borraron) reaparecen.
+  // Deshace una baja (en el trabajador y en el directorio): vuelve a estar
+  // activo en todas las fechas, y sus reservas posteriores a la baja (que
+  // nunca se borraron) reaparecen.
   async reintegrarTrabajadorCuadrilla(id: string) {
+    const { data, error } = await supabase.rpc('reintegrar_trabajador_cuadrilla', {
+      p_trabajador_id: id,
+    })
+
+    if (error) throw error
+    return data
+  },
+
+  // ---------- Motivos de baja ----------
+  // Ver add_motivo_baja_y_desvinculados.sql. Alimentan el selector de "Dar
+  // de baja"; en orden de creación (los tres de siempre primero).
+  async obtenerMotivosBaja() {
     const { data, error } = await supabase
-      .from('cuadrillas_turno_trabajadores')
-      .update({ fecha_baja: null })
-      .eq('id', id)
+      .from('motivos_baja')
+      .select('*')
+      .order('created_at', { ascending: true })
+
+    if (error) throw error
+    return data
+  },
+
+  // Agregado rápido desde "Dar de baja". Si otra persona justo creó el mismo
+  // motivo (índice único, sin distinguir mayúsculas) no es un error: se usa
+  // el nombre tal cual y la lista ya lo deduplica.
+  async crearMotivoBaja(nombre: string, creadoPor: string) {
+    const { data, error } = await supabase
+      .from('motivos_baja')
+      .insert([{ nombre, creado_por: creadoPor }])
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      if (error.code === '23505') return { nombre }
+      throw error
+    }
     return data
   },
 

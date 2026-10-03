@@ -60,6 +60,49 @@ function contar(valores: string[]): ConteoCargo[] {
   return conteos.sort((a, b) => b.total - a.total || COLLATOR.compare(a.cargo, b.cargo))
 }
 
+// Etiqueta de las bajas que no tienen motivo registrado (las hechas antes de
+// que se pidiera el motivo).
+export const SIN_MOTIVO = 'Sin motivo registrado'
+
+export interface ConteoMotivo {
+  motivo: string
+  total: number
+}
+
+export interface ResumenDesvinculados {
+  total: number
+  porMotivo: ConteoMotivo[]
+  porCargo: ConteoCargo[]
+}
+
+// Desvinculado = tiene fecha de baja (aunque sea futura, igual que "Dados de
+// baja" en el modal de trabajadores). Pedido explícito 2026-10-03: los
+// desvinculados salen de la contabilidad de cargos vigentes y pasan a su
+// propio grupo.
+export function separarDesvinculados(funcionarios: FuncionarioTurno[]): {
+  vigentes: FuncionarioTurno[]
+  desvinculados: FuncionarioTurno[]
+} {
+  const vigentes: FuncionarioTurno[] = []
+  const desvinculados: FuncionarioTurno[] = []
+  for (const f of funcionarios) (f.fecha_baja ? desvinculados : vigentes).push(f)
+  return { vigentes, desvinculados }
+}
+
+// Cuántos desvinculados hay en total, por motivo y por cargo (ambos de
+// mayor a menor). Los motivos se agrupan igual que los cargos: sin
+// distinguir mayúsculas, tildes ni espacios de más.
+export function resumirDesvinculados(desvinculados: FuncionarioTurno[]): ResumenDesvinculados {
+  return {
+    total: desvinculados.length,
+    porMotivo: contar(desvinculados.map((f) => limpiar(f.motivo_baja) || SIN_MOTIVO)).map(({ cargo, total }) => ({
+      motivo: cargo,
+      total,
+    })),
+    porCargo: contar(desvinculados.map((f) => limpiar(f.cargo) || 'Sin cargo')),
+  }
+}
+
 export interface GrupoTurnos {
   // Ej. "Turno A" — agrupa "Turno A - 7x7", "Turno A - 14x14", etc.
   grupo: string

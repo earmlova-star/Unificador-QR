@@ -26,3 +26,10 @@ export function fechaLocalISO(fecha: Date = new Date()): string {
   const dia = String(fecha.getDate()).padStart(2, '0')
   return `${fecha.getFullYear()}-${mes}-${dia}`
 }
+
+// 'YYYY-MM-DD' → 'DD-MM-YYYY' para mostrar (formato chileno); lo que no
+// tenga esa forma se devuelve tal cual.
+export function fechaCorta(fechaISO: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fechaISO)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : fechaISO
+}

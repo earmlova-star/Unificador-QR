@@ -418,6 +418,10 @@ export interface TrabajadorCuadrilla {
   // turno, inclusive. Reservas de Pasajes lo calcula solo hasta esa fecha,
   // así que sus reservas anteriores se conservan. null/undefined = activo.
   fecha_baja?: string | null;
+  // Por qué se dio de baja (ver add_motivo_baja_y_desvinculados.sql): texto,
+  // normalmente uno de los de MotivoBaja. null en las bajas anteriores a esa
+  // migración y en los activos.
+  motivo_baja?: string | null;
   created_at: string;
 }
 
@@ -507,9 +511,25 @@ export interface FuncionarioTurno {
   // viaja en subidas/bajadas sueltas.
   turno?: string | null;
 
+  // Desvinculación (pedido explícito 2026-10-03, ver
+  // add_motivo_baja_y_desvinculados.sql): se completan solos cuando el
+  // trabajador se da de baja en su turno (mismo RUT). Con fecha_baja deja de
+  // contar en el resumen de cargos y pasa al grupo "Desvinculados".
+  fecha_baja?: string | null;
+  motivo_baja?: string | null;
+
   creado_por?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Motivo de baja disponible en el selector de "Dar de baja" (tabla
+// motivos_baja). Los registros de baja guardan el NOMBRE como texto, no el id.
+export interface MotivoBaja {
+  id: string;
+  nombre: string;
+  creado_por?: string | null;
+  created_at: string;
 }
 
 // Subida o Bajada suelta, de un solo día — pedido explícito 2026-09-24:

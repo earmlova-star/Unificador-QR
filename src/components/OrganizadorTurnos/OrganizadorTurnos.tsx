@@ -18,6 +18,7 @@ import { ModalTrabajadores } from './ModalTrabajadores'
 import { ReservasPasajes } from './ReservasPasajes'
 import { ListaFuncionarios } from './ListaFuncionarios'
 import { contarActivos, fechaLocalISO } from './lib/bajasTrabajadores'
+import { MOTIVOS_BAJA_POR_DEFECTO, unirMotivo } from './lib/motivosBaja'
 
 interface OrganizadorTurnosProps {
   usuario: Usuario
@@ -40,6 +41,10 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   // — pedido explícito 2026-10-02.
   const [funcionarios, setFuncionarios] = useState<FuncionarioTurno[]>([])
   const [errorFuncionarios, setErrorFuncionarios] = useState<string | null>(null)
+  // Motivos para elegir al dar de baja a un trabajador de turno (pedido
+  // explícito 2026-10-03). Arranca con los tres de siempre y se reemplaza por
+  // la lista de la base al cargar.
+  const [motivosBaja, setMotivosBaja] = useState<string[]>(MOTIVOS_BAJA_POR_DEFECTO)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -109,6 +114,18 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
   // cargado bien — la pantalla quedaba vacía como si se hubieran
   // borrado, sin que la base perdiera un solo dato (incidente real
   // 2026-09-24). Separados, un fallo en uno no pisa el resultado del otro.
+  // Vuelve a leer solo el directorio de funcionarios (tras una baja o un
+  // reintegro, que lo modifican en la base). Si falla no pasa nada grave: la
+  // próxima carga completa lo corrige.
+  const recargarFuncionarios = async () => {
+    try {
+      setFuncionarios((await db.obtenerFuncionariosTurno()) as FuncionarioTurno[])
+      setErrorFuncionarios(null)
+    } catch {
+      /* se actualiza en la próxima carga */
+    }
+  }
+
   const cargar = async () => {
     setCargando(true)
     setError(null)
@@ -145,6 +162,16 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
       setErrorFuncionarios(null)
     } catch (err) {
       setErrorFuncionarios(traducirError(err, 'No se pudo cargar el directorio de funcionarios'))
+    }
+
+    // Igual que el directorio: complemento de "Dar de baja". Si no carga
+    // (migración sin correr) quedan los tres de siempre y no se avisa acá.
+    try {
+      const datosMotivos = await db.obtenerMotivosBaja()
+      const nombres = (datosMotivos as { nombre: string }[]).map((m) => m.nombre)
+      if (nombres.length > 0) setMotivosBaja(nombres)
+    } catch {
+      /* se queda con MOTIVOS_BAJA_POR_DEFECTO */
     }
 
     setError(mensajeError)
@@ -872,27 +899,37 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
               prev.map((c) => (c.id === cuadrillaTrabajadoresId ? { ...c, trabajadores: c.trabajadores.filter((t) => t.id !== id) } : c))
             )
           }}
-          // Baja con fecha (pedido explícito 2026-10-03): el trabajador sigue
-          // existiendo y sus reservas anteriores a la fecha se conservan.
-          onDarDeBaja={async (id, fechaISO) => {
-            await db.darDeBajaTrabajadorCuadrilla(id, fechaISO)
+          // Baja con fecha y motivo (pedidos explícitos 2026-10-03): el
+          // trabajador sigue existiendo y sus reservas anteriores a la fecha
+          // se conservan. La misma baja actualiza su ficha en Funcionarios
+          // (Desvinculados), así que el directorio se vuelve a leer.
+          onDarDeBaja={async (id, fechaISO, motivo) => {
+            await db.darDeBajaTrabajadorCuadrilla(id, fechaISO, motivo)
             setCuadrillas((prev) =>
               prev.map((c) =>
                 c.id === cuadrillaTrabajadoresId
-                  ? { ...c, trabajadores: c.trabajadores.map((t) => (t.id === id ? { ...t, fecha_baja: fechaISO } : t)) }
+                  ? { ...c, trabajadores: c.trabajadores.map((t) => (t.id === id ? { ...t, fecha_baja: fechaISO, motivo_baja: motivo } : t)) }
                   : c
               )
             )
+            await recargarFuncionarios()
           }}
           onReintegrar={async (id) => {
             await db.reintegrarTrabajadorCuadrilla(id)
             setCuadrillas((prev) =>
               prev.map((c) =>
                 c.id === cuadrillaTrabajadoresId
-                  ? { ...c, trabajadores: c.trabajadores.map((t) => (t.id === id ? { ...t, fecha_baja: null } : t)) }
+                  ? { ...c, trabajadores: c.trabajadores.map((t) => (t.id === id ? { ...t, fecha_baja: null, motivo_baja: null } : t)) }
                   : c
               )
             )
+            await recargarFuncionarios()
+          }}
+          motivosBaja={motivosBaja}
+          onAgregarMotivoBaja={async (nombre) => {
+            const creado = (await db.crearMotivoBaja(nombre, usuario.id)) as { nombre: string }
+            setMotivosBaja((prev) => unirMotivo(prev, creado.nombre))
+            return creado.nombre
           }}
         />
       )}

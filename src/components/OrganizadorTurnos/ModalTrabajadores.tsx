@@ -4,7 +4,8 @@ import { traducirError } from '@lib/errores'
 import { FuncionarioTurno } from '@/types/index'
 import { validarRut, formatearRut } from './lib/rut'
 import { parsearTrabajadoresMasivo } from './lib/parseoMasivo'
-import { fechaLocalISO } from './lib/bajasTrabajadores'
+import { fechaCorta, fechaLocalISO } from './lib/bajasTrabajadores'
+import { buscarMotivo, limpiarMotivo } from './lib/motivosBaja'
 import { BuscadorFuncionario } from './BuscadorFuncionario'
 
 export interface PersonaViajeEditable {
@@ -16,6 +17,8 @@ export interface PersonaViajeEditable {
   // Solo los trabajadores de un turno la tienen (baja con fecha, pedido
   // explícito 2026-10-03): último día que siguen en el turno.
   fecha_baja?: string | null
+  // Por qué se dio de baja (ver add_motivo_baja_y_desvinculados.sql).
+  motivo_baja?: string | null
 }
 
 interface ModalTrabajadoresProps {
@@ -32,13 +35,17 @@ interface ModalTrabajadoresProps {
   // Borra al trabajador para siempre (y, en turnos, sus reservas de pasajes
   // y vencimientos — ver darDeBajaTrabajadorCuadrilla en supabase.ts).
   onEliminar: (id: string) => Promise<void>
-  // Baja con fecha (pedido explícito 2026-10-03): si vienen, el botón
-  // principal de cada trabajador pasa a ser "Dar de baja" (conserva sus
+  // Baja con fecha y motivo (pedidos explícitos 2026-10-03): si vienen, el
+  // botón principal de cada trabajador pasa a ser "Dar de baja" (conserva sus
   // reservas anteriores) y "Eliminar definitivamente" queda en la sección
   // "Dados de baja". Solo las pasan los turnos; las subidas/bajadas sueltas
   // siguen eliminando directo, como antes.
-  onDarDeBaja?: (id: string, fechaISO: string) => Promise<void>
+  onDarDeBaja?: (id: string, fechaISO: string, motivo: string) => Promise<void>
   onReintegrar?: (id: string) => Promise<void>
+  // Motivos para elegir al dar de baja, y alta de uno nuevo desde ahí
+  // ("agregado rápido"): devuelve el nombre ya guardado.
+  motivosBaja?: string[]
+  onAgregarMotivoBaja?: (nombre: string) => Promise<string>
 }
 
 function trabajadorCambio(a: PersonaViajeEditable, b: PersonaViajeEditable): boolean {
@@ -65,6 +72,8 @@ export const ModalTrabajadores = ({
   onEliminar,
   onDarDeBaja,
   onReintegrar,
+  motivosBaja,
+  onAgregarMotivoBaja,
 }: ModalTrabajadoresProps) => {
   const [modoEdicion, setModoEdicion] = useState(false)
   const [trabajadoresLocal, setTrabajadoresLocal] = useState(trabajadores)
@@ -81,6 +90,11 @@ export const ModalTrabajadores = ({
   const [bajaEnCursoId, setBajaEnCursoId] = useState<string | null>(null)
   const [fechaBaja, setFechaBaja] = useState(() => fechaLocalISO())
   const [procesandoBajaId, setProcesandoBajaId] = useState<string | null>(null)
+  // ...y por qué: el motivo elegido y el agregado rápido de uno nuevo.
+  const [motivoBaja, setMotivoBaja] = useState('')
+  const [agregandoMotivo, setAgregandoMotivo] = useState(false)
+  const [nuevoMotivo, setNuevoMotivo] = useState('')
+  const [guardandoMotivo, setGuardandoMotivo] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const { validos: masivoValidos, errores: masivoErrores } = parsearTrabajadoresMasivo(textoMasivo)
@@ -124,17 +138,48 @@ export const ModalTrabajadores = ({
   const abrirBaja = (id: string) => {
     setError(null)
     setFechaBaja(fechaLocalISO())
+    setMotivoBaja('')
+    setAgregandoMotivo(false)
+    setNuevoMotivo('')
     setBajaEnCursoId(id)
+  }
+
+  // Agregado rápido de un motivo: si ya existe (sin distinguir mayúsculas)
+  // solo se elige; si no, se guarda y queda elegido.
+  const agregarMotivo = async () => {
+    const nombre = limpiarMotivo(nuevoMotivo)
+    if (!nombre) return setError('Escribe el nombre del motivo.')
+    setError(null)
+
+    const existente = buscarMotivo(motivosBaja ?? [], nombre)
+    if (existente || !onAgregarMotivoBaja) {
+      setMotivoBaja(existente ?? nombre)
+      setNuevoMotivo('')
+      setAgregandoMotivo(false)
+      return
+    }
+
+    setGuardandoMotivo(true)
+    try {
+      setMotivoBaja(await onAgregarMotivoBaja(nombre))
+      setNuevoMotivo('')
+      setAgregandoMotivo(false)
+    } catch (err) {
+      setError(traducirError(err, 'No se pudo agregar el motivo'))
+    } finally {
+      setGuardandoMotivo(false)
+    }
   }
 
   const confirmarBaja = async (id: string) => {
     if (!onDarDeBaja) return
     if (!fechaBaja) return setError('Elige la fecha de baja.')
+    if (!motivoBaja) return setError('Elige el motivo de la baja.')
     setError(null)
     setProcesandoBajaId(id)
     try {
-      await onDarDeBaja(id, fechaBaja)
-      setTrabajadoresLocal((prev) => prev.map((t) => (t.id === id ? { ...t, fecha_baja: fechaBaja } : t)))
+      await onDarDeBaja(id, fechaBaja, motivoBaja)
+      setTrabajadoresLocal((prev) => prev.map((t) => (t.id === id ? { ...t, fecha_baja: fechaBaja, motivo_baja: motivoBaja } : t)))
       setBajaEnCursoId(null)
     } catch (err) {
       setError(traducirError(err, 'No se pudo dar de baja al funcionario'))
@@ -149,7 +194,7 @@ export const ModalTrabajadores = ({
     setProcesandoBajaId(id)
     try {
       await onReintegrar(id)
-      setTrabajadoresLocal((prev) => prev.map((t) => (t.id === id ? { ...t, fecha_baja: null } : t)))
+      setTrabajadoresLocal((prev) => prev.map((t) => (t.id === id ? { ...t, fecha_baja: null, motivo_baja: null } : t)))
     } catch (err) {
       setError(traducirError(err, 'No se pudo reintegrar al funcionario'))
     } finally {
@@ -278,7 +323,8 @@ export const ModalTrabajadores = ({
                             <tr key={t.id} className="text-slate-500">
                               <td className="pr-4 py-1.5">{t.nombre} {t.apellido}</td>
                               <td className="pr-4 py-1.5">{t.rut}</td>
-                              <td className="py-1.5 whitespace-nowrap">Baja el {t.fecha_baja}</td>
+                              <td className="pr-4 py-1.5 whitespace-nowrap">Baja el {fechaCorta(t.fecha_baja ?? '')}</td>
+                              <td className="py-1.5">{t.motivo_baja || <span className="text-slate-400">Sin motivo registrado</span>}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -374,13 +420,66 @@ export const ModalTrabajadores = ({
                         <label className="block text-[11px] text-amber-800">
                           Último día en el turno — sus reservas hasta esa fecha (inclusive) se conservan; después ya no aparece.
                         </label>
+                        <input
+                          type="date"
+                          value={fechaBaja}
+                          onChange={(e) => setFechaBaja(e.target.value)}
+                          className="px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                        />
+                        <label className="block text-[11px] text-amber-800">Motivo de la baja</label>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={motivoBaja}
+                            onChange={(e) => setMotivoBaja(e.target.value)}
+                            aria-label="Motivo de la baja"
+                            className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                          >
+                            <option value="">Elige un motivo…</option>
+                            {(motivosBaja ?? []).map((m) => (
+                              <option key={m} value={m}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                          {onAgregarMotivoBaja && (
+                            <button
+                              type="button"
+                              onClick={() => setAgregandoMotivo((v) => !v)}
+                              title="Agregar un motivo nuevo a la lista"
+                              className={`text-xs px-2 py-1 rounded border flex-shrink-0 ${agregandoMotivo ? 'bg-amber-100 border-amber-400 text-amber-900' : 'border-amber-300 text-amber-800 hover:bg-amber-100'}`}
+                            >
+                              + Nuevo motivo
+                            </button>
+                          )}
+                        </div>
+                        {agregandoMotivo && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={nuevoMotivo}
+                              onChange={(e) => setNuevoMotivo(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  agregarMotivo()
+                                }
+                              }}
+                              placeholder="Ej. Fin de contrato"
+                              aria-label="Nombre del nuevo motivo"
+                              autoFocus
+                              className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={agregarMotivo}
+                              disabled={guardandoMotivo}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-800 text-white disabled:opacity-50 flex-shrink-0"
+                            >
+                              {guardandoMotivo ? 'Guardando…' : 'Agregar'}
+                            </button>
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            type="date"
-                            value={fechaBaja}
-                            onChange={(e) => setFechaBaja(e.target.value)}
-                            className="px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:border-blue-600"
-                          />
                           <button
                             type="button"
                             onClick={() => confirmarBaja(t.id)}
@@ -421,8 +520,10 @@ export const ModalTrabajadores = ({
                           {t.nombre} {t.apellido} <span className="text-slate-400">· {t.rut}</span>
                         </div>
                         <div className="text-[11px] text-slate-500">
-                          Baja el {t.fecha_baja}
+                          Baja el {fechaCorta(t.fecha_baja ?? '')}
                           {(t.fecha_baja ?? '') >= hoy ? ' (sigue en el turno hasta esa fecha)' : ''}
+                          {' · '}
+                          {t.motivo_baja || 'sin motivo registrado'}
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">

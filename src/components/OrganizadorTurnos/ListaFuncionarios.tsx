@@ -4,7 +4,16 @@ import { traducirError } from '@lib/errores'
 import { FuncionarioTurno, Usuario } from '@/types/index'
 import { validarRut, formatearRut } from './lib/rut'
 import { filtrarFuncionarios, normalizarRut } from './lib/buscarFuncionario'
-import { ConteoCargo, GrupoTurnos, agruparTurnosPorGrupo, resumirCargos } from './lib/resumenCargos'
+import { fechaCorta } from './lib/bajasTrabajadores'
+import {
+  ConteoCargo,
+  GrupoTurnos,
+  ResumenDesvinculados,
+  agruparTurnosPorGrupo,
+  resumirCargos,
+  resumirDesvinculados,
+  separarDesvinculados,
+} from './lib/resumenCargos'
 
 interface ListaFuncionariosProps {
   funcionarios: FuncionarioTurno[]
@@ -35,12 +44,32 @@ const CLASE_INPUT =
 
 // Pastilla informativa azul, la misma en todo el resumen.
 const CLASE_PASTILLA = 'text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 flex-shrink-0'
+const CLASE_PASTILLA_DESVINCULADOS = 'text-[10px] font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5 flex-shrink-0'
 
 // Tarjeta del resumen de cargos (pedido explícito 2026-10-02): lista cada
 // cargo con su cantidad y una barra proporcional al que más tiene dentro de
 // ESTA tarjeta.
+// Lista de etiquetas con su cantidad y una barra proporcional a la mayor.
+const ListaBarras = ({ items, claseBarra = 'bg-blue-600' }: { items: { etiqueta: string; total: number }[]; claseBarra?: string }) => {
+  const maximo = Math.max(1, ...items.map((i) => i.total))
+  return (
+    <ul className="space-y-1.5 max-h-64 overflow-y-auto">
+      {items.map((i) => (
+        <li key={i.etiqueta} className="flex items-center text-xs">
+          <span className="w-2/5 truncate text-slate-600 font-medium" title={i.etiqueta}>
+            {i.etiqueta}
+          </span>
+          <span className="flex-1 h-1.5 mx-3 bg-slate-100 rounded-full">
+            <span className={`block h-full rounded-full ${claseBarra}`} style={{ width: `${(i.total / maximo) * 100}%` }} />
+          </span>
+          <span className="w-6 text-right font-semibold text-slate-700">{i.total}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 const TarjetaCargos = ({ titulo, total, cargos, destacada = false }: { titulo: string; total: number; cargos: ConteoCargo[]; destacada?: boolean }) => {
-  const maximo = Math.max(1, ...cargos.map((c) => c.total))
   return (
     <div className={`border rounded-xl bg-white ${destacada ? 'border-blue-300' : 'border-slate-200'}`}>
       <div className={`flex items-center justify-between gap-2 px-3 py-2 border-b rounded-t-xl ${destacada ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
@@ -51,22 +80,35 @@ const TarjetaCargos = ({ titulo, total, cargos, destacada = false }: { titulo: s
           {total} {total === 1 ? 'funcionario' : 'funcionarios'}
         </span>
       </div>
-      <ul className="px-3 py-2 space-y-1.5 max-h-64 overflow-y-auto">
-        {cargos.map((c) => (
-          <li key={c.cargo} className="flex items-center text-xs">
-            <span className="w-2/5 truncate text-slate-600 font-medium" title={c.cargo}>
-              {c.cargo}
-            </span>
-            <span className="flex-1 h-1.5 mx-3 bg-slate-100 rounded-full">
-              <span className="block h-full bg-blue-600 rounded-full" style={{ width: `${(c.total / maximo) * 100}%` }} />
-            </span>
-            <span className="w-6 text-right font-semibold text-slate-700">{c.total}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="px-3 py-2">
+        <ListaBarras items={cargos.map((c) => ({ etiqueta: c.cargo, total: c.total }))} />
+      </div>
     </div>
   )
 }
+
+// Grupo "Desvinculados" (pedido explícito 2026-10-03): los que se dieron de
+// baja, fuera de la contabilidad de cargos vigentes, con el motivo.
+const TarjetaDesvinculados = ({ resumen }: { resumen: ResumenDesvinculados }) => (
+  <div className="border border-rose-200 rounded-xl bg-white">
+    <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-rose-200 bg-rose-50 rounded-t-xl">
+      <span className="text-xs font-bold text-rose-800 uppercase tracking-wide">Desvinculados</span>
+      <span className={CLASE_PASTILLA_DESVINCULADOS}>
+        {resumen.total} {resumen.total === 1 ? 'funcionario' : 'funcionarios'}
+      </span>
+    </div>
+    <div className="p-3 space-y-4">
+      <div>
+        <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Por motivo</p>
+        <ListaBarras items={resumen.porMotivo.map((m) => ({ etiqueta: m.motivo, total: m.total }))} claseBarra="bg-rose-500" />
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Por cargo</p>
+        <ListaBarras items={resumen.porCargo.map((c) => ({ etiqueta: c.cargo, total: c.total }))} claseBarra="bg-slate-400" />
+      </div>
+    </div>
+  </div>
+)
 
 // Tarjeta contenedora de un grupo de turnos ("GRUPO: TURNO A"), con una
 // tarjeta anidada por cada turno del grupo.
@@ -88,7 +130,9 @@ const TarjetaGrupoTurnos = ({ grupo }: { grupo: GrupoTurnos }) => (
 // 2026-10-02): el directorio que alimenta el autocompletado al agregar un
 // funcionario a una Subida/Bajada suelta. Agregar, editar o borrar acá NO
 // toca a los funcionarios ya asignados a un turno o evento — cada uno
-// conserva su propia copia.
+// conserva su propia copia. La única excepción es la baja: al dar de baja a
+// un trabajador de un turno (mismo RUT) su ficha pasa a "Desvinculados" con
+// la fecha y el motivo (pedido explícito 2026-10-03).
 export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, cargando, onCreado, onActualizado, onEliminado }: ListaFuncionariosProps) => {
   const [busqueda, setBusqueda] = useState('')
   const [agregando, setAgregando] = useState(false)
@@ -98,10 +142,14 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
   const [guardando, setGuardando] = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
   const [mostrarResumen, setMostrarResumen] = useState(true)
+  const [mostrarDesvinculados, setMostrarDesvinculados] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Resumen de todo el directorio, no del filtro de la búsqueda.
-  const resumen = useMemo(() => resumirCargos(funcionarios), [funcionarios])
+  // Los desvinculados no cuentan en los cargos vigentes: van aparte.
+  const { vigentes, desvinculados } = useMemo(() => separarDesvinculados(funcionarios), [funcionarios])
+  // Resumen de todos los vigentes, no del filtro de la búsqueda.
+  const resumen = useMemo(() => resumirCargos(vigentes), [vigentes])
+  const resumenDesvinculados = useMemo(() => resumirDesvinculados(desvinculados), [desvinculados])
   // "Sin turno" aparece como una tarjeta más, pero no es un turno.
   const cantidadTurnos = resumen.porTurno.filter((t) => t.turno !== null).length
   // Turno A, Turno B… como tarjetas contenedoras; el resto (Administrativo,
@@ -109,12 +157,27 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
   const { grupos: gruposTurnos, sueltos: turnosSueltos } = useMemo(() => agruparTurnosPorGrupo(resumen.porTurno), [resumen])
 
   const ordenados = useMemo(
-    () => [...funcionarios].sort((a, b) => COLLATOR.compare(a.apellido, b.apellido) || COLLATOR.compare(a.nombre, b.nombre)),
-    [funcionarios]
+    () => [...vigentes].sort((a, b) => COLLATOR.compare(a.apellido, b.apellido) || COLLATOR.compare(a.nombre, b.nombre)),
+    [vigentes]
   )
   const visibles = useMemo(
     () => (busqueda.trim() ? filtrarFuncionarios(ordenados, busqueda) : ordenados),
     [ordenados, busqueda]
+  )
+  // Desvinculados: los más recientes primero.
+  const ordenadosDesvinculados = useMemo(
+    () =>
+      [...desvinculados].sort(
+        (a, b) =>
+          (b.fecha_baja ?? '').localeCompare(a.fecha_baja ?? '') ||
+          COLLATOR.compare(a.apellido, b.apellido) ||
+          COLLATOR.compare(a.nombre, b.nombre)
+      ),
+    [desvinculados]
+  )
+  const visiblesDesvinculados = useMemo(
+    () => (busqueda.trim() ? filtrarFuncionarios(ordenadosDesvinculados, busqueda) : ordenadosDesvinculados),
+    [ordenadosDesvinculados, busqueda]
   )
   const opcionesTurno = useMemo(() => {
     const todos = new Set<string>(turnosSugeridos)
@@ -129,7 +192,10 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
     if (!datos.nombre.trim() || !datos.apellido.trim() || !datos.cargo.trim()) return 'Completa nombres, apellidos y cargo.'
     if (!validarRut(datos.rut)) return 'RUT inválido. Formato esperado XX.XXX.XXX-X.'
     const duplicado = funcionarios.find((f) => f.id !== idActual && normalizarRut(f.rut) === normalizarRut(datos.rut))
-    if (duplicado) return `Ya existe un funcionario con ese RUT: ${duplicado.nombre} ${duplicado.apellido}.`
+    if (duplicado) {
+      const desvinculado = duplicado.fecha_baja ? ` (desvinculado el ${fechaCorta(duplicado.fecha_baja)})` : ''
+      return `Ya existe un funcionario con ese RUT: ${duplicado.nombre} ${duplicado.apellido}${desvinculado}.`
+    }
     return null
   }
 
@@ -184,7 +250,9 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
 
   const eliminar = async (f: FuncionarioTurno) => {
     const ok = window.confirm(
-      `¿Eliminar a ${f.nombre} ${f.apellido} del directorio? No afecta a los turnos ni a las subidas/bajadas donde ya está asignado.`
+      f.fecha_baja
+        ? `¿Eliminar a ${f.nombre} ${f.apellido} del directorio? Se pierde su registro de desvinculación (fecha y motivo) en esta lista; no afecta al turno donde figura dado de baja.`
+        : `¿Eliminar a ${f.nombre} ${f.apellido} del directorio? No afecta a los turnos ni a las subidas/bajadas donde ya está asignado.`
     )
     if (!ok) return
     setError(null)
@@ -233,7 +301,14 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-500">
-            {busqueda.trim() ? `${visibles.length} de ${funcionarios.length}` : funcionarios.length} funcionario{funcionarios.length === 1 ? '' : 's'}
+            {busqueda.trim() ? `${visibles.length} de ${vigentes.length}` : vigentes.length} funcionario{vigentes.length === 1 ? '' : 's'}
+            {desvinculados.length > 0 && (
+              <>
+                {' · '}
+                {busqueda.trim() ? `${visiblesDesvinculados.length} de ${desvinculados.length}` : desvinculados.length}{' '}
+                {desvinculados.length === 1 ? 'desvinculado' : 'desvinculados'}
+              </>
+            )}
           </span>
           <button
             type="button"
@@ -285,21 +360,30 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
               {resumen.porCargo.length} {resumen.porCargo.length === 1 ? 'cargo' : 'cargos'} · {cantidadTurnos}{' '}
               {cantidadTurnos === 1 ? 'turno' : 'turnos'}
             </span>
+            {desvinculados.length > 0 && (
+              <span className={CLASE_PASTILLA_DESVINCULADOS}>
+                {desvinculados.length} {desvinculados.length === 1 ? 'desvinculado' : 'desvinculados'}
+              </span>
+            )}
           </button>
           {mostrarResumen && (
             // Columna 1: total + turnos sueltos; luego una columna por grupo
-            // de turnos (Turno A, Turno B…) — si hay más de dos grupos,
-            // siguen en una fila nueva.
+            // de turnos (Turno A, Turno B…) y, al final, el grupo de
+            // Desvinculados — si no caben en tres columnas, siguen en una
+            // fila nueva. Todo lo anterior cuenta solo a los vigentes.
             <div className="p-3 grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-              <div className="space-y-4">
-                <TarjetaCargos titulo="Total por cargo" total={resumen.total} cargos={resumen.porCargo} destacada />
-                {turnosSueltos.map((t) => (
-                  <TarjetaCargos key={t.turno ?? 'sin-turno'} titulo={t.turno ?? 'Sin turno'} total={t.total} cargos={t.cargos} />
-                ))}
-              </div>
+              {vigentes.length > 0 && (
+                <div className="space-y-4">
+                  <TarjetaCargos titulo="Total por cargo" total={resumen.total} cargos={resumen.porCargo} destacada />
+                  {turnosSueltos.map((t) => (
+                    <TarjetaCargos key={t.turno ?? 'sin-turno'} titulo={t.turno ?? 'Sin turno'} total={t.total} cargos={t.cargos} />
+                  ))}
+                </div>
+              )}
               {gruposTurnos.map((g) => (
                 <TarjetaGrupoTurnos key={g.grupo} grupo={g} />
               ))}
+              {desvinculados.length > 0 && <TarjetaDesvinculados resumen={resumenDesvinculados} />}
             </div>
           )}
         </div>
@@ -320,9 +404,15 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
           <p className="text-sm text-slate-500">El directorio está vacío.</p>
           <p className="text-xs text-slate-400 mt-1">Agrega funcionarios con "+ Agregar funcionario" (o corre add_funcionarios_turno.sql para cargar los que ya existen en los turnos).</p>
         </div>
-      ) : visibles.length === 0 ? (
+      ) : visibles.length === 0 && visiblesDesvinculados.length === 0 ? (
         <p className="text-sm text-slate-500 py-10 text-center">Ningún funcionario coincide con "{busqueda}".</p>
       ) : (
+        <>
+        {visibles.length === 0 ? (
+          <p className="text-sm text-slate-500 py-6 text-center">
+            {busqueda.trim() ? `Ningún funcionario vigente coincide con "${busqueda}".` : 'No hay funcionarios vigentes.'}
+          </p>
+        ) : (
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="min-w-full text-xs">
             <thead>
@@ -408,6 +498,69 @@ export const ListaFuncionarios = ({ funcionarios, turnosSugeridos, usuario, carg
             </tbody>
           </table>
         </div>
+        )}
+
+        {visiblesDesvinculados.length > 0 && (
+          <div className="border border-rose-200 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setMostrarDesvinculados((v) => !v)}
+              aria-expanded={mostrarDesvinculados}
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 w-full px-3 py-2 bg-rose-50 hover:bg-rose-100 text-left rounded-lg select-none"
+            >
+              <span className="text-rose-400 text-xs w-3 flex-shrink-0">{mostrarDesvinculados ? '▾' : '▸'}</span>
+              <span className="text-xs font-bold text-rose-800">Desvinculados</span>
+              <span className={CLASE_PASTILLA_DESVINCULADOS}>
+                {visiblesDesvinculados.length} {visiblesDesvinculados.length === 1 ? 'funcionario' : 'funcionarios'}
+              </span>
+            </button>
+            {mostrarDesvinculados && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase text-xs tracking-wider border-b border-slate-200">
+                      <th className="text-left font-semibold px-3 py-2">Nombres</th>
+                      <th className="text-left font-semibold px-3 py-2">Apellidos</th>
+                      <th className="text-left font-semibold px-3 py-2">RUT</th>
+                      <th className="text-left font-semibold px-3 py-2">Cargo</th>
+                      <th className="text-left font-semibold px-3 py-2">Turno</th>
+                      <th className="text-left font-semibold px-3 py-2">Fecha de baja</th>
+                      <th className="text-left font-semibold px-3 py-2">Motivo</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {visiblesDesvinculados.map((f) => (
+                      <tr key={f.id} className="text-slate-500">
+                        <td className="px-3 py-1.5 whitespace-nowrap">{f.nombre}</td>
+                        <td className="px-3 py-1.5 whitespace-nowrap">{f.apellido}</td>
+                        <td className="px-3 py-1.5 whitespace-nowrap">{f.rut}</td>
+                        <td className="px-3 py-1.5 whitespace-nowrap">{f.cargo}</td>
+                        <td className="px-3 py-1.5 whitespace-nowrap">{f.turno || '—'}</td>
+                        <td className="px-3 py-1.5 whitespace-nowrap">{f.fecha_baja ? fechaCorta(f.fecha_baja) : '—'}</td>
+                        <td className="px-3 py-1.5 whitespace-nowrap text-slate-700">
+                          {f.motivo_baja || <span className="text-slate-400">Sin motivo registrado</span>}
+                        </td>
+                        <td className="px-3 py-1.5 whitespace-nowrap text-right">
+                          <button
+                            type="button"
+                            onClick={() => eliminar(f)}
+                            disabled={eliminandoId === f.id}
+                            title="Eliminar del directorio"
+                            className="p-1.5 hover:bg-slate-100 rounded text-red-600 disabled:opacity-50"
+                          >
+                            🗑
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+        </>
       )}
     </div>
   )

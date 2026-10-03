@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { agruparTurnosPorGrupo, resumirCargos } from './resumenCargos'
+import { SIN_MOTIVO, agruparTurnosPorGrupo, resumirCargos, resumirDesvinculados, separarDesvinculados } from './resumenCargos'
 import { FuncionarioTurno } from '@/types/index'
 
 let contador = 0
@@ -130,5 +130,84 @@ describe('agruparTurnosPorGrupo', () => {
 
   it('sin turnos no hay grupos ni sueltos', () => {
     expect(agruparTurnosPorGrupo([])).toEqual({ grupos: [], sueltos: [] })
+  })
+})
+
+// Desvinculados (pedido explícito 2026-10-03): salen de la contabilidad de
+// cargos vigentes y pasan a su propio grupo, con el motivo de la baja.
+const baja = (cargo: string, motivo: string | null, turno: string | null = 'Turno A - 14x14'): FuncionarioTurno => ({
+  ...f(cargo, turno),
+  fecha_baja: '2026-10-03',
+  motivo_baja: motivo,
+})
+
+describe('separarDesvinculados', () => {
+  it('manda a desvinculados a quien tiene fecha de baja y deja a los demás como vigentes', () => {
+    const activo = f('Soldador', 'Turno A - 14x14')
+    const sinBaja = { ...f('Capataz', null), fecha_baja: null, motivo_baja: null }
+    const dado = baja('Soldador', 'Traslado')
+    const { vigentes, desvinculados } = separarDesvinculados([activo, dado, sinBaja])
+    expect(vigentes).toEqual([activo, sinBaja])
+    expect(desvinculados).toEqual([dado])
+  })
+
+  it('cuenta como desvinculado aunque la fecha de baja sea futura', () => {
+    const futuro = { ...f('Soldador', null), fecha_baja: '2099-01-01', motivo_baja: 'Traslado' }
+    expect(separarDesvinculados([futuro]).desvinculados).toEqual([futuro])
+  })
+
+  it('el resumen de cargos vigentes ya no cuenta a los desvinculados', () => {
+    const todos = [f('Soldador', 'Turno A - 14x14'), f('Soldador', 'Turno A - 14x14'), baja('Soldador', 'Traslado'), baja('Capataz', 'Despido Directo')]
+    const { vigentes } = separarDesvinculados(todos)
+    const r = resumirCargos(vigentes)
+    expect(r.total).toBe(2)
+    expect(r.porCargo).toEqual([{ cargo: 'Soldador', total: 2 }])
+    expect(r.porTurno.map((t) => [t.turno, t.total])).toEqual([['Turno A - 14x14', 2]])
+  })
+
+  it('sin nadie dado de baja, todos son vigentes', () => {
+    const todos = [f('Soldador', null), f('Capataz', null)]
+    expect(separarDesvinculados(todos)).toEqual({ vigentes: todos, desvinculados: [] })
+  })
+})
+
+describe('resumirDesvinculados', () => {
+  it('cuenta el total, por motivo y por cargo (de mayor a menor)', () => {
+    const r = resumirDesvinculados([
+      baja('Soldador', 'Renuncia Voluntaria'),
+      baja('Soldador', 'Despido Directo'),
+      baja('Capataz', 'Renuncia Voluntaria'),
+      baja('Soldador', 'Renuncia Voluntaria'),
+      baja('Ayudante', 'Traslado'),
+    ])
+    expect(r.total).toBe(5)
+    expect(r.porMotivo).toEqual([
+      { motivo: 'Renuncia Voluntaria', total: 3 },
+      { motivo: 'Despido Directo', total: 1 },
+      { motivo: 'Traslado', total: 1 },
+    ])
+    expect(r.porCargo).toEqual([
+      { cargo: 'Soldador', total: 3 },
+      { cargo: 'Ayudante', total: 1 },
+      { cargo: 'Capataz', total: 1 },
+    ])
+  })
+
+  it('agrupa los motivos sin distinguir mayúsculas, tildes ni espacios de más', () => {
+    const r = resumirDesvinculados([baja('X', 'Licencia médica'), baja('X', 'licencia medica '), baja('X', 'LICENCIA MÉDICA')])
+    expect(r.porMotivo).toHaveLength(1)
+    expect(r.porMotivo[0].total).toBe(3)
+  })
+
+  it('las bajas sin motivo (anteriores a pedirlo) van como "Sin motivo registrado"', () => {
+    const r = resumirDesvinculados([baja('X', null), baja('X', '   '), baja('X', 'Traslado')])
+    expect(r.porMotivo).toEqual([
+      { motivo: SIN_MOTIVO, total: 2 },
+      { motivo: 'Traslado', total: 1 },
+    ])
+  })
+
+  it('sin desvinculados todo queda vacío', () => {
+    expect(resumirDesvinculados([])).toEqual({ total: 0, porMotivo: [], porCargo: [] })
   })
 })
