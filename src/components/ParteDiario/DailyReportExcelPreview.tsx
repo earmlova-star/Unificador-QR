@@ -11,6 +11,7 @@ import { descargarBlob, generarExcelParteDiario, nombreArchivoParteDiario } from
 import { descripcionConHorario } from '@lib/actividades'
 import { useState } from 'react'
 import { traducirError } from '@lib/errores'
+import { formatearNumeroReporte } from '@lib/numeroReporte'
 
 interface DailyReportExcelPreviewProps {
   parte: ParteDiario
@@ -80,7 +81,7 @@ export const DailyReportExcelPreview = ({ parte, contrato, onCerrar }: DailyRepo
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[96vw] max-w-5xl max-h-[92vh] overflow-hidden bg-white rounded-lg shadow-xl z-50 flex flex-col">
           <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 shrink-0">
             <Dialog.Title className="text-base font-bold text-slate-900">
-              Daily Report N° {String(parte.numero_reporte).padStart(3, '0')} — vista previa
+              Daily Report {parte.numero_reporte === null ? '(borrador)' : `N° ${formatearNumeroReporte(parte.numero_reporte)}`} — vista previa
             </Dialog.Title>
             <div className="flex items-center gap-2">
               <button
@@ -115,7 +116,7 @@ export const DailyReportExcelPreview = ({ parte, contrato, onCerrar }: DailyRepo
               <tbody>
                 <tr>
                   <td className={celdaTexto + ' bg-slate-50 font-semibold w-40'}>Report N°</td>
-                  <td className={celdaNum + ' w-24'}>{String(parte.numero_reporte).padStart(3, '0')}</td>
+                  <td className={celdaNum + ' w-24'}>{formatearNumeroReporte(parte.numero_reporte) ?? ''}</td>
                   <td className={celdaTexto + ' bg-slate-50 font-semibold w-24'}>Fecha :</td>
                   <td className={celdaNum}>{parte.fecha}</td>
                 </tr>

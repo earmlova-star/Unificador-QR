@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { db } from '@lib/supabase'
 import { calcularHHReales } from '@lib/calculosHH'
 import { formatearFechaCorta } from '@lib/formato'
+import { formatearNumeroReporte } from '@lib/numeroReporte'
 import { ParteDiario, ParteDiarioEstado, Usuario } from '@/types/index'
 import { ParteDiarioForm } from './ParteDiarioForm'
 import { ParteDiarioDetalle } from './ParteDiarioDetalle'
@@ -59,7 +60,7 @@ export const ParteDiarioList = ({ usuario, contrato }: ParteDiarioListProps) => 
   }, [busqueda, fechaDesde, fechaHasta])
 
   const eliminarParte = async (parte: ParteDiario) => {
-    if (!window.confirm(`¿Eliminar el Daily Report N° ${String(parte.numero_reporte).padStart(3, '0')}? Esta acción no se puede deshacer.`)) {
+    if (!window.confirm(`¿Eliminar ${parte.numero_reporte === null ? 'este borrador' : `el Daily Report N° ${formatearNumeroReporte(parte.numero_reporte)}`}? Esta acción no se puede deshacer.`)) {
       return
     }
     try {
@@ -86,7 +87,7 @@ export const ParteDiarioList = ({ usuario, contrato }: ParteDiarioListProps) => 
     if (!texto) return partesEnRango
     return partesEnRango.filter(
       (p) =>
-        String(p.numero_reporte).padStart(3, '0').includes(texto) ||
+        (formatearNumeroReporte(p.numero_reporte) ?? '').includes(texto) ||
         (p.usuario_creador?.nombre ?? '').toLowerCase().includes(texto)
     )
   }, [partesEnRango, busqueda])

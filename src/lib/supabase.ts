@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { UserRole, UserStatus, SolicitudCompra, Requisicion, OrdenCompra, GuiaDespacho } from '@/types/index'
-import { acumularCadena, calcularHHReales } from './calculosHH'
+import { acumularConBorradores, calcularHHReales } from './calculosHH'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -205,19 +205,28 @@ async function recalcularAcumuladosContratoSinBloqueo(contratoId: string) {
   // diferir entre LT y LB dentro de la misma cadena).
   const { data, error } = await supabase
     .from('partes_diarios')
-    .select('id, faena, mano_obra_directa, mano_obra_indirecta, maquinaria, hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
+    .select('id, numero_reporte, faena, mano_obra_directa, mano_obra_indirecta, maquinaria, hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
     .eq('contrato_id', contratoId)
     .order('numero_reporte', { ascending: true })
 
   if (error) throw error
   if (!data || data.length === 0) return
 
-  const reales = data.map((p) => calcularHHReales(p, p.faena))
-  const cadena = acumularCadena(reales)
+  // Pedido explícito 2026-10-03: el N° de reporte se asigna al enviar, así
+  // que un borrador no tiene N° y no entra en la cadena (ver
+  // acumularConBorradores): su acumulado es "lo emitido hasta hoy + este".
+  const emitidos = data.filter((p) => p.numero_reporte !== null)
+  const borradores = data.filter((p) => p.numero_reporte === null)
+  const acumulados = acumularConBorradores(
+    emitidos.map((p) => calcularHHReales(p, p.faena)),
+    borradores.map((p) => calcularHHReales(p, p.faena))
+  )
+  const filas = [
+    ...emitidos.map((p, i) => ({ p, acc: acumulados.emitidos[i] })),
+    ...borradores.map((p, i) => ({ p, acc: acumulados.borradores[i] })),
+  ]
 
-  for (let i = 0; i < data.length; i++) {
-    const p = data[i]
-    const acc = cadena[i]
+  for (const { p, acc } of filas) {
     const sinCambios =
       (p.hh_directas_acumuladas ?? 0) === acc.directas &&
       (p.hm_acumuladas ?? 0) === acc.hm &&
@@ -509,58 +518,6 @@ export const db = {
   // Tablas separadas de las de Documentos QR (add_partes_diarios.sql) —
   // comparten solo "usuarios" y "contratos". Ver ARQUITECTURA.md.
 
-  // Reserva de verdad el siguiente número (incrementa el contador atómico
-  // en secuencias_numero_parte) — llamar SOLO justo antes de crear el
-  // Daily Report, nunca para mostrarlo en pantalla mientras se llena el
-  // formulario (ver previsualizarSiguienteNumeroParte, y el bug de saltos
-  // de correlativo del 2026-09-26 causado por llamar esto al abrir el
-  // formulario).
-  async obtenerSiguienteNumeroParte(contratoId: string): Promise<number> {
-    const { data, error } = await supabase.rpc('obtener_siguiente_numero_parte', {
-      p_contrato_id: contratoId,
-    })
-    if (error) throw error
-    return data as number
-  },
-
-  // Solo LEE cuál sería el próximo número (sin reservarlo/incrementar nada)
-  // — para mostrarlo en el formulario mientras el usuario todavía no decide
-  // guardar. El número real se pide recién al guardar, con
-  // obtenerSiguienteNumeroParte.
-  async previsualizarSiguienteNumeroParte(contratoId: string): Promise<number> {
-    const { data, error } = await supabase.rpc('previsualizar_siguiente_numero_parte', {
-      p_contrato_id: contratoId,
-    })
-    if (error) throw error
-    return data as number
-  },
-
-  // El último parte de la MISMA faena ya trae, en sus columnas
-  // *_acumuladas, la suma de todos los anteriores de esa faena — así que
-  // el acumulado del parte nuevo es "el de este + lo que traiga este
-  // mismo objeto" (ver nota en la migración). Cada faena corre su propia
-  // cadena de acumulados en paralelo (ver add_faena_partes_diarios.sql) —
-  // por eso el filtro por faena es tan importante acá como el de
-  // contrato_id: si tomara el último reporte de la OTRA faena como base,
-  // los acumulados de turno saldrían mal calculados.
-  async obtenerUltimoParteDiario(contratoId: string, faena: string) {
-    // Por número de reporte, no por fecha (ver obtenerPartesDiarios) —
-    // acá importa todavía más: si esto tomara el reporte equivocado como
-    // "el último", los acumulados de turno del reporte nuevo saldrían
-    // mal calculados.
-    const { data, error } = await supabase
-      .from('partes_diarios')
-      .select('hh_directas_acumuladas, hm_acumuladas, hh_indirectas_acumuladas')
-      .eq('contrato_id', contratoId)
-      .eq('faena', faena)
-      .order('numero_reporte', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (error) throw error
-    return data
-  },
-
   // Recalcula la cadena de *_acumuladas de un contrato DESDE CERO, a partir
   // del HH real de cada reporte (calcularHHReales), y guarda solo los
   // reportes cuyo acumulado haya quedado distinto del que ya tenían.
@@ -653,15 +610,18 @@ export const db = {
 
   async obtenerPartesDiarios(contratoId: string) {
     // Ordenado por número de reporte (no por fecha): dos reportes pueden
-    // crearse fuera de orden respecto a su fecha real (por ejemplo, un
+    // enviarse fuera de orden respecto a su fecha real (por ejemplo, un
     // borrador atrasado que se envía después), y el número de reporte es
-    // el que de verdad refleja el orden de creación — es correlativo y
-    // se asigna con obtener_siguiente_numero_parte() al crear cada uno.
+    // el que de verdad refleja el orden de envío — es correlativo y lo
+    // asigna la base de datos al enviar (ver fix_numero_parte_al_enviar.sql).
+    // Los borradores todavía no tienen N°: van primero (los más recientes
+    // arriba) y después los enviados de mayor a menor número.
     const { data, error } = await supabase
       .from('partes_diarios')
       .select('*, usuario_creador:creado_por(nombre, email, rol, firma_url)')
       .eq('contrato_id', contratoId)
-      .order('numero_reporte', { ascending: false })
+      .order('numero_reporte', { ascending: false, nullsFirst: true })
+      .order('created_at', { ascending: false })
 
     if (error) throw error
     return data

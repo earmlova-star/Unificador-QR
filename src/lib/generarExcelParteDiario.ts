@@ -10,6 +10,7 @@ import {
   UserRole,
 } from '@/types/index'
 import { descripcionConHorario } from '@lib/actividades'
+import { formatearNumeroReporte } from '@lib/numeroReporte'
 
 // Genera el Daily Report en Excel EXACTAMENTE con el formato original: se
 // abre la plantilla en blanco (public/plantillas/DR000_12501191.xlsx, la
@@ -594,7 +595,7 @@ export async function generarExcelParteDiario(parte: ParteDiario): Promise<Blob>
   }
 
   // ---------- Encabezado ----------
-  hojaDR.getCell('C5').value = String(parte.numero_reporte).padStart(3, '0')
+  hojaDR.getCell('C5').value = formatearNumeroReporte(parte.numero_reporte) ?? ''
   hojaDR.getCell('J5').value = new Date(`${parte.fecha}T00:00:00`)
   if (parte.condicion_climatica) hojaDR.getCell('K10').value = parte.condicion_climatica
   // Fila 11 ("Faena :") agregada a la plantilla para la división Las
@@ -825,7 +826,7 @@ export async function generarExcelParteDiario(parte: ParteDiario): Promise<Blob>
 
 export function nombreArchivoParteDiario(parte: ParteDiario): string {
   const fecha = parte.fecha.replace(/-/g, '.')
-  return `DR${String(parte.numero_reporte).padStart(3, '0')}_12501191_${fecha}_${parte.faena}.xlsx`
+  return `DR${formatearNumeroReporte(parte.numero_reporte) ?? 'borrador'}_12501191_${fecha}_${parte.faena}.xlsx`
 }
 
 export function descargarBlob(blob: Blob, nombreArchivo: string) {

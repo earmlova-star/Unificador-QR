@@ -6,6 +6,7 @@ import { puedeEditar, puedeEliminar } from './permisos'
 import { DailyReportExcelPreview } from './DailyReportExcelPreview'
 import { traducirError } from '@lib/errores'
 import { formatearEstadoParte } from '@lib/formato'
+import { formatearNumeroReporte } from '@lib/numeroReporte'
 
 interface ParteDiarioDetalleProps {
   usuario: Usuario
@@ -92,7 +93,7 @@ export const ParteDiarioDetalle = ({ usuario, contrato, parteId, onVolver, onEdi
 
   const eliminar = async () => {
     if (!parte) return
-    if (!window.confirm(`¿Eliminar el Daily Report N° ${String(parte.numero_reporte).padStart(3, '0')}? Esta acción no se puede deshacer.`)) {
+    if (!window.confirm(`¿Eliminar ${parte.numero_reporte === null ? 'este borrador' : `el Daily Report N° ${formatearNumeroReporte(parte.numero_reporte)}`}? Esta acción no se puede deshacer.`)) {
       return
     }
     setIsEliminando(true)
@@ -135,7 +136,9 @@ export const ParteDiarioDetalle = ({ usuario, contrato, parteId, onVolver, onEdi
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900">
-              Daily Report N° {String(parte.numero_reporte).padStart(3, '0')}
+              {parte.numero_reporte === null
+                ? 'Daily Report — borrador (sin N° todavía)'
+                : `Daily Report N° ${formatearNumeroReporte(parte.numero_reporte)}`}
             </h2>
             <p className="text-sm text-slate-500">
               {FAENA_LABELS[parte.faena]} · {parte.fecha} · {parte.condicion_climatica ?? 'Sin condición registrada'}

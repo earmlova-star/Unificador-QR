@@ -32,6 +32,7 @@ import {
   quitarActividad as quitarActividadYRealinear,
 } from '@lib/actividades'
 import { HH_DIRECTAS_PROGRAMADO_POR_FECHA } from '@lib/hhProgramadoSchedule'
+import { formatearNumeroReporte } from '@lib/numeroReporte'
 
 interface ParteDiarioFormProps {
   usuario: Usuario
@@ -254,7 +255,6 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
   }
 
   const [numeroReporte, setNumeroReporte] = useState<number | null>(() => parteExistente?.numero_reporte ?? null)
-  const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState<'borrador' | 'enviado' | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Al terminar de guardar, en vez de volver directo a la lista (como
@@ -330,22 +330,6 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
     limpiarBorrador()
     setBorradorDisponible(null)
   }
-
-  useEffect(() => {
-    // En modo edición el N° de reporte ya viene fijo desde parteExistente —
-    // no hay que pedir uno nuevo (correría el correlativo innecesariamente).
-    if (editando) return
-    if (!contrato?.id) return
-    setIsLoading(true)
-    // Solo previsualiza (no reserva/incrementa el contador): este efecto
-    // corre cada vez que se ABRE el formulario, incluso si el usuario
-    // termina cancelando sin guardar. El número real se pide recién al
-    // guardar (ver guardar()) — bug de saltos de correlativo 2026-09-26.
-    db.previsualizarSiguienteNumeroParte(contrato.id)
-      .then(setNumeroReporte)
-      .catch((err) => setError(traducirError(err, 'No se pudo obtener el N° de reporte')))
-      .finally(() => setIsLoading(false))
-  }, [contrato?.id, editando])
 
   // ---------- Actividades ----------
   // "Cantidad" (HH) ya no se tipea a mano: se deriva sola de Hora Inicio/
@@ -608,7 +592,6 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
 
   const guardar = async (estadoFinal: ParteDiarioEstado.BORRADOR | ParteDiarioEstado.ENVIADO) => {
     if (!contrato?.id) return
-    if (!editando && numeroReporte === null) return
 
     // Bloqueo duro de HH x actividad, solo al enviar (nuevo envío o
     // borrador→enviado). No aplica a "Guardar borrador" ni a "Guardar
@@ -711,13 +694,11 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         // UPDATE no aplica y se avisa en vez de pisarlo en silencio.
         parte = await db.actualizarParteDiarioSiEstado(parteExistente.id, parteExistente.estado, updates)
       } else {
-        // Recién ahora se reserva el número de verdad (incrementa el
-        // contador atómico) — el `numeroReporte` mostrado hasta este punto
-        // era solo una previsualización sin reservar nada (ver el useEffect
-        // de arriba y el bug de saltos de correlativo 2026-09-26).
-        const numeroReporteReal = await db.obtenerSiguienteNumeroParte(contrato.id)
-        setNumeroReporte(numeroReporteReal)
-
+        // El N° de reporte NO se pide acá: lo asigna la base de datos, en la
+        // misma operación que guarda el reporte, recién cuando queda enviado
+        // (ver fix_numero_parte_al_enviar.sql). Un borrador no tiene N°, y un
+        // guardado que falla no gasta ninguno (pedido explícito 2026-10-03,
+        // por el N° 43 que desapareció del correlativo).
         // hh_*_acumuladas acá es solo un valor inicial razonable (por si
         // recalcularAcumuladosContrato de abajo llegara a fallar después de
         // esta inserción) — el recálculo de la cadena completa es el que
@@ -725,7 +706,6 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         // reporte del contrato para sumarle el de este.
         parte = await db.crearParteDiario({
           contrato_id: contrato.id,
-          numero_reporte: numeroReporteReal,
           ...camposComunes,
 
           hh_directas_acumuladas: totalHhDirectas,
@@ -741,6 +721,10 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         // debe reintentarse como actualización, nunca como inserción nueva.
         setParteCreadoId(parte.id)
       }
+
+      // Muestra el N° que quedó (null si sigue siendo borrador): lo asigna la
+      // base al pasar a enviado, también cuando un borrador se envía al editarlo.
+      setNumeroReporte(parte.numero_reporte ?? null)
 
       // Recalcula la cadena de acumulados del CONTRATO completo DESDE CERO
       // (una sola cadena para LT y LB combinadas, pedido explícito
@@ -858,11 +842,16 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
       <div className="bg-white rounded-lg border border-slate-200 p-8 text-center space-y-4">
         <div className="text-emerald-600 text-4xl">✓</div>
         <h2 className="text-lg font-bold text-slate-900">
-          Daily Report N° {String(parteGuardada.numero_reporte).padStart(3, '0')} guardado
+          {formatearNumeroReporte(parteGuardada.numero_reporte)
+            ? `Daily Report N° ${formatearNumeroReporte(parteGuardada.numero_reporte)} guardado`
+            : 'Borrador guardado'}
         </h2>
         <p className="text-sm text-slate-500">
           {FAENA_LABELS[parteGuardada.faena]} · {parteGuardada.fecha}
         </p>
+        {parteGuardada.numero_reporte === null && (
+          <p className="text-xs text-slate-400">El N° de reporte se asigna cuando lo envíes.</p>
+        )}
         <div className="flex items-center justify-center gap-3 pt-2">
           <button
             type="button"
@@ -978,7 +967,9 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
         </div>
         <div className="text-right">
           <span className="block text-sm font-mono text-slate-500">
-            {isLoading ? 'Report N° …' : `Report N° ${String(numeroReporte).padStart(3, '0')}`}
+            {formatearNumeroReporte(numeroReporte)
+              ? `Report N° ${formatearNumeroReporte(numeroReporte)}`
+              : 'Report N° — se asigna al enviar'}
           </span>
           {guardadoEn && (
             <span className="block text-xs text-slate-400 mt-0.5">Borrador guardado en este equipo ✓</span>
@@ -1710,7 +1701,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
             <button
               type="button"
               onClick={() => guardar(ParteDiarioEstado.BORRADOR)}
-              disabled={isSaving !== null || isLoading || !contrato?.id}
+              disabled={isSaving !== null || !contrato?.id}
               className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isSaving === 'borrador' ? 'Guardando…' : 'Guardar borrador'}
@@ -1718,7 +1709,7 @@ export const ParteDiarioForm = ({ usuario, contrato, parteExistente, onGuardado,
             <button
               type="button"
               onClick={() => guardar(ParteDiarioEstado.ENVIADO)}
-              disabled={isSaving !== null || isLoading || !contrato?.id}
+              disabled={isSaving !== null || !contrato?.id}
               className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
             >
               {isSaving === 'enviado' ? 'Enviando…' : editando ? 'Guardar y enviar' : 'Enviar reporte'}

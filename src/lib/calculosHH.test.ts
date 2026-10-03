@@ -3,6 +3,7 @@ import { Faena, HH_TURNO_POR_FAENA, MIN_HH_ACTIVIDADES_PARA_ENVIAR } from '@/typ
 import {
   acumular,
   acumularCadena,
+  acumularConBorradores,
   calcularHHReales,
   hhDeFila,
   hhTotales,
@@ -208,5 +209,26 @@ describe('traducción de errores', () => {
     expect(traducirError(new Error('algo rarísimo'), 'No se pudo guardar el Daily Report')).toBe(
       'No se pudo guardar el Daily Report'
     )
+  })
+})
+
+// Pedido explícito 2026-10-03: el N° de reporte se asigna al enviar, así que
+// los borradores no tienen número y no deben entrar en la cadena.
+describe('acumularConBorradores', () => {
+  const r = (directas: number, hm: number, indirectas: number) => ({ directas, hm, indirectas })
+
+  it('la cadena de los emitidos no cambia por haber borradores', () => {
+    const emitidos = [r(10, 0, 5), r(20, 1, 5)]
+    expect(acumularConBorradores(emitidos, [r(99, 9, 9)]).emitidos).toEqual(acumularCadena(emitidos))
+  })
+
+  it('cada borrador acumula sobre lo emitido, sin sumar a los otros borradores', () => {
+    const { emitidos, borradores } = acumularConBorradores([r(10, 0, 5), r(20, 1, 5)], [r(4, 0, 2), r(6, 1, 3)])
+    expect(emitidos).toEqual([r(10, 0, 5), r(30, 1, 10)])
+    expect(borradores).toEqual([r(34, 1, 12), r(36, 2, 13)])
+  })
+
+  it('sin reportes emitidos, el acumulado de un borrador es solo el suyo', () => {
+    expect(acumularConBorradores([], [r(4, 1, 2)])).toEqual({ emitidos: [], borradores: [r(4, 1, 2)] })
   })
 })

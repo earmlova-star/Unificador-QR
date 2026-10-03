@@ -337,7 +337,10 @@ export interface ParteDiario {
   id: string;
   contrato_id: string;
 
-  numero_reporte: number;
+  // Null mientras el reporte es un borrador: el N° se asigna recién al
+  // enviarlo, en la base de datos (ver fix_numero_parte_al_enviar.sql) —
+  // pedido explícito 2026-10-03.
+  numero_reporte: number | null;
   fecha: string; // YYYY-MM-DD
   condicion_climatica?: string;
   faena: Faena;

@@ -1,5 +1,6 @@
 import { FAENA_LABELS, ParteDiario, ParteDiarioEstado, Usuario } from '@/types/index'
 import { calcularHHReales } from '@lib/calculosHH'
+import { formatearNumeroReporte } from '@lib/numeroReporte'
 import { Avatar } from './Avatar'
 import { puedeEditar, puedeEliminar } from './permisos'
 
@@ -58,7 +59,15 @@ export const ReportsHistoryTable = ({ partes, usuario, cargando, onSeleccionar, 
               const total = hh.directas + hh.hm + hh.indirectas
               return (
                 <tr key={parte.id} onClick={() => onSeleccionar(parte.id)} className="hover:bg-slate-50 cursor-pointer">
-                  <td className="px-4 py-3 font-mono text-slate-700">#{String(parte.numero_reporte).padStart(3, '0')}</td>
+                  <td className="px-4 py-3 font-mono text-slate-700">
+                    {parte.numero_reporte === null ? (
+                      <span className="font-sans italic text-slate-400" title="El N° se asigna cuando se envía">
+                        Sin N°
+                      </span>
+                    ) : (
+                      `#${formatearNumeroReporte(parte.numero_reporte)}`
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       title={FAENA_LABELS[parte.faena]}

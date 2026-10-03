@@ -94,6 +94,32 @@ export function calcularHHReales(
 }
 
 /**
+ * Acumulados de un contrato con borradores sin N° (pedido explícito
+ * 2026-10-03: el N° de reporte se asigna recién al enviar). Los reportes con
+ * número (`emitidos`, en orden de N°) forman la cadena; un borrador NO entra
+ * en ella — si entrara, el acumulado de los reportes siguientes dependería de
+ * un reporte que quizás nunca se envíe. A cada borrador se le calcula su
+ * acumulado como "todo lo emitido hasta hoy + este reporte", cada uno por
+ * separado (un borrador no suma al otro). Al enviarlo y recibir su N°, el
+ * recálculo lo mete en la cadena de verdad.
+ */
+export function acumularConBorradores(
+  emitidos: HHReporte[],
+  borradores: HHReporte[]
+): { emitidos: HHReporte[]; borradores: HHReporte[] } {
+  const cadena = acumularCadena(emitidos)
+  const base = cadena[cadena.length - 1] ?? { directas: 0, hm: 0, indirectas: 0 }
+  return {
+    emitidos: cadena,
+    borradores: borradores.map((r) => ({
+      directas: acumular(base.directas, r.directas),
+      hm: acumular(base.hm, r.hm),
+      indirectas: acumular(base.indirectas, r.indirectas),
+    })),
+  }
+}
+
+/**
  * Recalcula la cadena de acumulados DESDE CERO, en el mismo orden que
  * reciba `reportesEnOrden` (debe venir ordenado por número de reporte
  * ascendente). Usa `acumular()` en cada paso, así que si el HH real de un
