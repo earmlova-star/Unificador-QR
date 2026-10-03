@@ -17,7 +17,7 @@ import { ModalConfiguracionesViaje } from './ModalConfiguracionesViaje'
 import { ModalTrabajadores } from './ModalTrabajadores'
 import { ReservasPasajes } from './ReservasPasajes'
 import { ListaFuncionarios } from './ListaFuncionarios'
-import { contarActivos, fechaLocalISO } from './lib/bajasTrabajadores'
+import { contarVigentes } from './lib/bajasTrabajadores'
 import { MOTIVOS_BAJA_POR_DEFECTO, unirMotivo } from './lib/motivosBaja'
 
 interface OrganizadorTurnosProps {
@@ -591,7 +591,7 @@ export const OrganizadorTurnos = ({ usuario }: OrganizadorTurnosProps) => {
                         title="Ver, editar, agregar o eliminar funcionarios de este turno"
                         className="text-xs text-slate-500 hover:text-blue-600 hover:underline flex-shrink-0"
                       >
-                        {contarActivos(cuadrilla.trabajadores, fechaLocalISO())} trabajadores
+                        {contarVigentes(cuadrilla.trabajadores)} trabajadores
                       </button>
                     </div>
 

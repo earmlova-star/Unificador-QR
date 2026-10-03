@@ -15,8 +15,13 @@ export function trabajadorActivoEn(trabajador: ConFechaBaja, fechaISO: string): 
   return !trabajador.fecha_baja || fechaISO <= trabajador.fecha_baja
 }
 
-export function contarActivos(trabajadores: ConFechaBaja[], hoyISO: string): number {
-  return trabajadores.filter((t) => trabajadorActivoEn(t, hoyISO)).length
+// Cuántas personas "contiene" el turno (pedido explícito 2026-10-03): quien
+// ya tiene una baja registrada NO cuenta, aunque su último día en el turno
+// sea hoy o más adelante. A diferencia de trabajadorActivoEn (por fecha, para
+// calcular reservas), esto no depende del día: es la misma regla de "activos"
+// del modal de trabajadores y de Funcionarios.
+export function contarVigentes(trabajadores: ConFechaBaja[]): number {
+  return trabajadores.filter((t) => !t.fecha_baja).length
 }
 
 // Fecha de hoy en la hora local del navegador, como 'YYYY-MM-DD' (no

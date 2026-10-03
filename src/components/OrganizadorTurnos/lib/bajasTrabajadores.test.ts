@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { contarActivos, fechaCorta, fechaLocalISO, trabajadorActivoEn } from './bajasTrabajadores'
+import { contarVigentes, fechaCorta, fechaLocalISO, trabajadorActivoEn } from './bajasTrabajadores'
 
 describe('trabajadorActivoEn', () => {
   it('sin baja está activo en cualquier fecha', () => {
@@ -24,17 +24,21 @@ describe('trabajadorActivoEn', () => {
   })
 })
 
-describe('contarActivos', () => {
-  const equipo = [{}, { fecha_baja: '2026-10-07' }, { fecha_baja: '2026-10-01' }, { fecha_baja: null }]
-
-  it('cuenta solo a los que siguen activos ese día', () => {
-    expect(contarActivos(equipo, '2026-10-03')).toBe(3) // la baja del 01 ya no cuenta
-    expect(contarActivos(equipo, '2026-10-07')).toBe(3) // el del 07 aún cuenta ese día
-    expect(contarActivos(equipo, '2026-10-08')).toBe(2)
+describe('contarVigentes', () => {
+  it('no cuenta a nadie con baja registrada, sea cual sea su fecha (pasada, de hoy o futura)', () => {
+    const equipo = [{}, { fecha_baja: null }, { fecha_baja: '2000-01-01' }, { fecha_baja: '2026-10-03' }, { fecha_baja: '2099-12-31' }]
+    expect(contarVigentes(equipo)).toBe(2)
   })
 
-  it('un equipo vacío tiene 0 activos', () => {
-    expect(contarActivos([], '2026-10-03')).toBe(0)
+  it('al dar de baja a alguien el turno pasa a tener uno menos, aunque el último día sea hoy', () => {
+    const antes = [{ fecha_baja: null }, { fecha_baja: null }, { fecha_baja: null }]
+    const despues = [{ fecha_baja: null }, { fecha_baja: null }, { fecha_baja: '2026-10-03' }]
+    expect(contarVigentes(antes)).toBe(3)
+    expect(contarVigentes(despues)).toBe(2)
+  })
+
+  it('un equipo vacío tiene 0', () => {
+    expect(contarVigentes([])).toBe(0)
   })
 })
 
